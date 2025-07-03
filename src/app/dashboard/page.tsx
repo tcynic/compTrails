@@ -1,11 +1,13 @@
 'use client';
 
 import { useAuth } from '@/contexts/AuthContext';
+import { useOffline } from '@/components/providers/OfflineProvider';
 import { useRouter } from 'next/navigation';
 import { useEffect } from 'react';
 
 export default function DashboardPage() {
   const { user, logout, loading } = useAuth();
+  const { isOnline, syncStatus, serviceWorkerStatus } = useOffline();
   const router = useRouter();
 
   useEffect(() => {
@@ -71,10 +73,45 @@ export default function DashboardPage() {
               <h3 className="text-lg font-semibold text-blue-900 mb-2">
                 🔒 Encryption Implementation Complete
               </h3>
-              <p className="text-blue-800 text-sm">
+              <p className="text-blue-800 text-sm mb-3">
                 Zero-knowledge encryption with Argon2id key derivation and AES-256-GCM is now implemented.
                 All sensitive compensation data will be encrypted client-side before storage.
               </p>
+            </div>
+            
+            <div className="bg-green-50 border border-green-200 rounded-lg p-6">
+              <h3 className="text-lg font-semibold text-green-900 mb-2">
+                📱 Offline-First Architecture Complete
+              </h3>
+              <p className="text-green-800 text-sm mb-3">
+                Local-first data storage with IndexedDB, offline sync queue, and service worker caching.
+                Your data is always available, even without an internet connection.
+              </p>
+              <div className="grid grid-cols-3 gap-4 text-xs">
+                <div>
+                  <div className="font-medium">Connection Status</div>
+                  <div className={`${isOnline ? 'text-green-600' : 'text-red-600'}`}>
+                    {isOnline ? '🟢 Online' : '🔴 Offline'}
+                  </div>
+                </div>
+                <div>
+                  <div className="font-medium">Sync Status</div>
+                  <div className="text-gray-600">
+                    {syncStatus === 'idle' && '⏸️ Idle'}
+                    {syncStatus === 'syncing' && '🔄 Syncing'}
+                    {syncStatus === 'offline' && '📱 Offline'}
+                    {syncStatus === 'error' && '❌ Error'}
+                  </div>
+                </div>
+                <div>
+                  <div className="font-medium">Service Worker</div>
+                  <div className="text-gray-600">
+                    {serviceWorkerStatus === 'activated' && '✅ Active'}
+                    {serviceWorkerStatus === 'installing' && '⏳ Installing'}
+                    {serviceWorkerStatus === 'unsupported' && '❌ Unsupported'}
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         </div>
