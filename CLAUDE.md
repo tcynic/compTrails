@@ -132,9 +132,19 @@ npx convex deploy       # Deploy Convex functions
 
 All markdown files must include a version history section at the bottom when edited. This is enforced by the Cursor rule in `.cursor/rules`.
 
+### Code Writing Best Practices
+
+- Always use descriptive variable names
+
+## Task Management
+
+- Keep track of tasks in @context/tasks.md. Add new ones to that file if needed.  When tasks are complete mark them complete in that file. 
+
 ---
 
 **Document Version History**
 
 - v1.0 - Initial creation (2025-01-03)
 - v1.1 - Added Cursor rules section and version history (2025-01-03)
+- v1.2 - Added best practice about using descriptive variable names (2024-02-22)
+- v1.3 - Added Task Management section with guidance for task tracking (2024-02-22)

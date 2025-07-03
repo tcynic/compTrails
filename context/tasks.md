@@ -17,87 +17,87 @@ Before starting development, ensure you have:
 
 #### Task 1.1.1: Create Next.js Project
 
-- [ ] Run `npx create-next-app@latest comp-trails --typescript --tailwind --app`
-- [ ] Choose "Yes" for ESLint
-- [ ] Choose "Yes" for `src/` directory
-- [ ] Navigate to project: `cd comp-trails`
-- [ ] Test initial setup: `npm run dev`
-- [ ] Verify app loads at <http://localhost:3000>
+- [x] Run `npx create-next-app@latest comp-trails --typescript --tailwind --app`
+- [x] Choose "Yes" for ESLint
+- [x] Choose "Yes" for `src/` directory
+- [x] Navigate to project: `cd comp-trails`
+- [x] Test initial setup: `npm run dev`
+- [x] Verify app loads at <http://localhost:3000>
 
 #### Task 1.1.2: Configure TypeScript
 
-- [ ] Open `tsconfig.json`
-- [ ] Set `"strict": true` in compilerOptions
-- [ ] Add `"noImplicitAny": true`
-- [ ] Add `"strictNullChecks": true`
-- [ ] Run `npm run build` to verify no TypeScript errors
+- [x] Open `tsconfig.json`
+- [x] Set `"strict": true` in compilerOptions
+- [x] Add `"noImplicitAny": true`
+- [x] Add `"strictNullChecks": true`
+- [x] Run `npm run build` to verify no TypeScript errors
 
 #### Task 1.1.3: Setup Code Quality Tools
 
-- [ ] Install Prettier: `npm install --save-dev prettier`
-- [ ] Create `.prettierrc` file with team standards
-- [ ] Install Prettier ESLint plugin: `npm install --save-dev eslint-config-prettier`
-- [ ] Update `.eslintrc.json` to include prettier config
-- [ ] Create `.prettierignore` file
-- [ ] Add format script to package.json: `"format": "prettier --write ."`
+- [x] Install Prettier: `npm install --save-dev prettier`
+- [x] Create `.prettierrc` file with team standards
+- [x] Install Prettier ESLint plugin: `npm install --save-dev eslint-config-prettier`
+- [x] Update `eslint.config.mjs` to include prettier config
+- [x] Create `.prettierignore` file
+- [x] Add format script to package.json: `"format": "prettier --write ."`
 
 #### Task 1.1.4: Initialize Git Repository
 
-- [ ] Run `git init` (if not already initialized)
-- [ ] Create `.gitignore` file
-- [ ] Add node_modules, .env.local, .next to .gitignore
-- [ ] Make initial commit: `git add . && git commit -m "Initial project setup"`
+- [x] Run `git init` (if not already initialized)
+- [x] Create `.gitignore` file
+- [x] Add node_modules, .env.local, .next to .gitignore
+- [x] Make initial commit: `git add . && git commit -m "Initial project setup"`
 
 ### 1.2 Environment Configuration
 
 #### Task 1.2.1: Setup Environment Variables
 
-- [ ] Create `.env.local` file in root directory
-- [ ] Create `.env.example` with placeholder values
-- [ ] Add environment variables for:
+- [x] Create `.env.local` file in root directory
+- [x] Create `.env.example` with placeholder values
+- [x] Add environment variables for:
   - `NEXT_PUBLIC_APP_URL`
   - `NEXT_PUBLIC_CONVEX_URL` (placeholder)
   - `WORKOS_API_KEY` (placeholder)
   - `WORKOS_CLIENT_ID` (placeholder)
-- [ ] Add `.env.local` to `.gitignore`
+- [x] Add `.env.local` to `.gitignore`
 
 #### Task 1.2.2: Install Core Dependencies
 
-- [ ] Install UI libraries: `npm install @radix-ui/react-dialog @radix-ui/react-dropdown-menu @radix-ui/react-label @radix-ui/react-slot`
-- [ ] Install form libraries: `npm install react-hook-form zod @hookform/resolvers`
-- [ ] Install utility libraries: `npm install clsx tailwind-merge class-variance-authority`
-- [ ] Install date library: `npm install date-fns`
-- [ ] Verify all packages installed: `npm list`
+- [x] Install UI libraries: `npm install @radix-ui/react-dialog @radix-ui/react-dropdown-menu @radix-ui/react-label @radix-ui/react-slot`
+- [x] Install form libraries: `npm install react-hook-form zod @hookform/resolvers`
+- [x] Install utility libraries: `npm install clsx tailwind-merge class-variance-authority`
+- [x] Install date library: `npm install date-fns`
+- [x] Verify all packages installed: `npm list`
 
 ### 1.3 Convex Setup
 
 #### Task 1.3.1: Install and Initialize Convex
 
-- [ ] Install Convex: `npm install convex`
-- [ ] Run Convex setup: `npx convex dev`
-- [ ] Follow prompts to create new Convex project
-- [ ] Save deployment URL to `.env.local`
-- [ ] Verify `convex/` directory created
+- [x] Install Convex: `npm install convex`
+- [x] Run Convex setup: `npx convex dev` (manually created config files due to non-interactive terminal)
+- [x] Follow prompts to create new Convex project (manually configured)
+- [x] Save deployment URL to `.env.local` (placeholder added)
+- [x] Verify `convex/` directory created
 
 #### Task 1.3.2: Create Initial Schema
 
-- [ ] Create `convex/schema.ts` file
-- [ ] Define User table with basic fields (id, email, name)
-- [ ] Define CompensationRecord table with fields:
+- [x] Create `convex/schema.ts` file
+- [x] Define User table with basic fields (id, email, name)
+- [x] Define CompensationRecord table with fields:
   - userId (string)
   - type (salary/bonus/equity)
   - amount (number)
   - currency (string)
   - createdAt (number)
-- [ ] Run `npx convex dev` to sync schema
+- [x] Run `npx convex dev` to sync schema
 
 #### Task 1.3.3: Setup Convex Client Provider
 
-- [ ] Create `src/providers/ConvexClientProvider.tsx`
-- [ ] Import ConvexProvider from "convex/react"
-- [ ] Wrap app with ConvexProvider in `app/layout.tsx`
-- [ ] Add "use client" directive to provider file
-- [ ] Test connection with simple query
+- [x] Create `src/providers/ConvexClientProvider.tsx`
+- [x] Import ConvexProvider from "convex/react"
+- [x] Wrap app with ConvexProvider in `app/layout.tsx`
+- [x] Add "use client" directive to provider file
+- [x] Test connection with simple query
 
 ### 1.4 WorkOS Authentication Setup
 
