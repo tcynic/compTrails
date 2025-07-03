@@ -1,0 +1,42 @@
+## Markdown Version History Rule
+
+When editing any markdown file (.md), always add or update a version history section at the very bottom of the file after making changes.
+
+### Version History Format
+
+```markdown
+---
+
+**Document Version History**
+
+- v1.0 - Initial creation (YYYY-MM-DD)
+- v1.1 - Description of changes made (YYYY-MM-DD)
+- v1.2 - Description of changes made (YYYY-MM-DD)
+```
+
+### Guidelines
+
+1. **Location**: Version history must be at the very end of the markdown file
+2. **Format**: Use the exact format shown above with horizontal rule separator
+3. **Versioning**: Use semantic versioning (major.minor)  
+   - Increment minor version (e.g., 1.1 → 1.2) for content updates, additions, corrections
+   - Increment major version (e.g., 1.2 → 2.0) for significant restructuring or complete rewrites
+4. **Date Format**: Use YYYY-MM-DD format
+5. **Description**: Provide a brief, clear description of what was changed
+6. **Existing Files**: If a file already has version history, update it; don't create duplicate sections
+
+### Examples of Version Descriptions
+
+- "Initial creation"
+- "Added new section on X"
+- "Updated Y section with latest information"
+- "Fixed typos and formatting"
+- "Restructured document organization"
+- "Added examples and clarifications"
+
+### When to Apply
+
+- Any time you edit, create, or modify a markdown file
+- Both major content changes and minor edits (typos, formatting)
+- When adding new sections or removing existing ones
+- When updating existing content for accuracy or clarity
