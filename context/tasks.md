@@ -103,34 +103,33 @@ Before starting development, ensure you have:
 
 #### Task 1.4.1: Install WorkOS SDK
 
-- [ ] Install WorkOS: `npm install @workos-inc/node`
-- [ ] Create `src/lib/workos.ts` file
-- [ ] Initialize WorkOS client with API key
-- [ ] Export configured client
+- [x] Install WorkOS: `npm install @workos-inc/node`
+- [x] Create `src/lib/workos.ts` file
+- [x] Initialize WorkOS client with API key
+- [x] Export configured client
 
 #### Task 1.4.2: Create Auth API Routes
 
-- [ ] Create `app/api/auth/login/route.ts`
-- [ ] Implement GET handler for SSO authorization URL
-- [ ] Create `app/api/auth/callback/route.ts`
-- [ ] Implement GET handler for OAuth callback
-- [ ] Add error handling for failed auth
+- [x] Create `app/api/auth/login/route.ts`
+- [x] Implement GET handler for SSO authorization URL
+- [x] Create `app/api/auth/callback/route.ts`
+- [x] Implement GET handler for OAuth callback
+- [x] Add error handling for failed auth
 
 #### Task 1.4.3: Create Auth Context
 
-- [ ] Create `src/contexts/AuthContext.tsx`
-- [ ] Define auth state interface (user, loading, error)
-- [ ] Implement login and logout functions
-- [ ] Create useAuth hook
-- [ ] Wrap app with AuthProvider
+- [x] Create `src/contexts/AuthContext.tsx`
+- [x] Define auth state interface (user, loading, error)
+- [x] Implement login and logout functions
+- [x] Create useAuth hook
+- [x] Wrap app with AuthProvider
 
 #### Task 1.4.4: Build Login Page
 
-- [ ] Create `app/login/page.tsx`
-- [ ] Add "Sign in with Google" button
-- [ ] Add "Sign in with Microsoft" button
-- [ ] Style with Tailwind CSS
-- [ ] Handle loading states
+- [x] Create `app/login/page.tsx`
+- [x] Add "Sign in with Google" button
+- [x] Style with Tailwind CSS
+- [x] Handle loading states
 
 ### 1.5 Encryption Implementation
 
