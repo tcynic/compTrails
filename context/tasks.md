@@ -135,27 +135,27 @@ Before starting development, ensure you have:
 
 #### Task 1.5.1: Setup Encryption Utilities
 
-- [ ] Create `src/lib/crypto/encryption.ts`
-- [ ] Implement generateKey function using Web Crypto API
-- [ ] Implement encrypt function (AES-256-GCM)
-- [ ] Implement decrypt function
-- [ ] Add TypeScript types for encrypted data
+- [x] Create `src/lib/crypto/encryption.ts`
+- [x] Implement generateKey function using Web Crypto API
+- [x] Implement encrypt function (AES-256-GCM)
+- [x] Implement decrypt function
+- [x] Add TypeScript types for encrypted data
 
 #### Task 1.5.2: Install Argon2 WASM
 
-- [ ] Install argon2-browser: `npm install argon2-browser`
-- [ ] Create `src/lib/crypto/keyDerivation.ts`
-- [ ] Implement deriveKey function with Argon2id
-- [ ] Set appropriate memory/iteration parameters
-- [ ] Test key derivation in browser console
+- [x] Install argon2-browser: `npm install argon2-browser`
+- [x] Create `src/lib/crypto/keyDerivation.ts`
+- [x] Implement deriveKey function with Argon2id
+- [x] Set appropriate memory/iteration parameters
+- [x] Test key derivation in browser console
 
 #### Task 1.5.3: Create Encryption Service
 
-- [ ] Create `src/services/encryptionService.ts`
-- [ ] Implement encryptData method
-- [ ] Implement decryptData method
-- [ ] Add methods for key management
-- [ ] Create unit tests for encryption/decryption
+- [x] Create `src/services/encryptionService.ts`
+- [x] Implement encryptData method
+- [x] Implement decryptData method
+- [x] Add methods for key management
+- [x] Create unit tests for encryption/decryption
 
 ### 1.6 IndexedDB Setup
 
