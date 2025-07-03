@@ -149,7 +149,9 @@ export class SyncService {
    * Process pending sync items
    */
   private static async processPendingSync(): Promise<void> {
-    const pendingItems = await LocalStorageService.getPendingSyncItems();
+    // TODO: Get current user ID from auth context
+    const currentUserId = 'current-user'; // Placeholder
+    const pendingItems = await LocalStorageService.getPendingSyncItems(currentUserId);
 
     for (const item of pendingItems) {
       try {

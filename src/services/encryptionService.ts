@@ -268,3 +268,6 @@ export class EncryptionService {
     return password.join('');
   }
 }
+
+// Export a singleton instance
+export const encryptionService = new EncryptionService();

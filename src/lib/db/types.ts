@@ -14,6 +14,7 @@ export type CompensationType = 'salary' | 'bonus' | 'equity';
 export interface CompensationRecord extends BaseRecord {
   type: CompensationType;
   encryptedData: EncryptedData; // All sensitive data is encrypted
+  currency: string; // Currency code (not sensitive, stored in plaintext)
   syncStatus: 'pending' | 'synced' | 'conflict' | 'error';
   lastSyncAt?: number;
   version: number; // For conflict resolution
