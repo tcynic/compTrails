@@ -9,6 +9,7 @@ function LoginContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const authError = searchParams.get('error');
+  const errorDescription = searchParams.get('error_description');
 
   useEffect(() => {
     if (user) {
@@ -70,8 +71,13 @@ function LoginContent() {
                     Authentication Error
                   </h3>
                   <div className="mt-2 text-sm text-red-700">
-                    {error || 'Authentication failed. Please try again.'}
+                    {error || errorDescription || 'Authentication failed. Please try again.'}
                   </div>
+                  {authError && (
+                    <div className="mt-1 text-xs text-red-600">
+                      Error code: {authError}
+                    </div>
+                  )}
                 </div>
               </div>
             </div>

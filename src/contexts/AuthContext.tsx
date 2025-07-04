@@ -1,6 +1,6 @@
 'use client';
 
-import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import { createContext, useContext, useState, useEffect, useCallback, useMemo, ReactNode } from 'react';
 
 interface User {
   id: string;
@@ -34,43 +34,43 @@ export function AuthProvider({ children }: AuthProviderProps) {
     error: null,
   });
 
-  // Check for existing session on mount
-  useEffect(() => {
-    checkAuthStatus();
-  }, []);
-
-  const checkAuthStatus = async () => {
+  const checkAuthStatus = useCallback(async () => {
     try {
       const response = await fetch('/api/auth/me');
       if (response.ok) {
         const user = await response.json();
-        setAuthState({
+        setAuthState(() => ({
           user,
           loading: false,
           error: null,
-        });
+        }));
       } else {
-        setAuthState({
+        setAuthState(() => ({
           user: null,
           loading: false,
           error: null,
-        });
+        }));
       }
     } catch {
-      setAuthState({
+      setAuthState(() => ({
         user: null,
         loading: false,
         error: 'Failed to check authentication status',
-      });
+      }));
     }
-  };
+  }, []);
 
-  const login = (provider: string = 'google') => {
+  // Check for existing session on mount
+  useEffect(() => {
+    checkAuthStatus();
+  }, [checkAuthStatus]);
+
+  const login = useCallback((provider: string = 'google') => {
     setAuthState(prev => ({ ...prev, loading: true, error: null }));
     window.location.href = `/api/auth/login?provider=${provider}`;
-  };
+  }, []);
 
-  const logout = async () => {
+  const logout = useCallback(async () => {
     try {
       setAuthState(prev => ({ ...prev, loading: true }));
       const response = await fetch('/api/auth/logout', {
@@ -78,11 +78,11 @@ export function AuthProvider({ children }: AuthProviderProps) {
       });
       
       if (response.ok) {
-        setAuthState({
+        setAuthState(() => ({
           user: null,
           loading: false,
           error: null,
-        });
+        }));
         window.location.href = '/login';
       } else {
         throw new Error('Logout failed');
@@ -94,18 +94,18 @@ export function AuthProvider({ children }: AuthProviderProps) {
         error: 'Failed to logout',
       }));
     }
-  };
+  }, []);
 
-  const clearError = () => {
+  const clearError = useCallback(() => {
     setAuthState(prev => ({ ...prev, error: null }));
-  };
+  }, []);
 
-  const value: AuthContextType = {
+  const value: AuthContextType = useMemo(() => ({
     ...authState,
     login,
     logout,
     clearError,
-  };
+  }), [authState, login, logout, clearError]);
 
   return (
     <AuthContext.Provider value={value}>
