@@ -1,14 +1,21 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import dynamic from 'next/dynamic';
 import { useAuth } from '@/contexts/AuthContext';
 import { useRouter } from 'next/navigation';
-import { useEffect } from 'react';
 import { DashboardLayout } from '@/components/layouts/dashboard-layout';
 import { Button } from '@/components/ui/button';
-import { AddSalaryForm } from '@/components/features/salary/add-salary-form';
-import { SalaryList } from '@/components/features/salary/salary-list';
 import { Plus } from 'lucide-react';
+
+// Lazy load heavy salary components
+const AddSalaryForm = dynamic(() => import('@/components/features/salary/add-salary-form').then(mod => ({ default: mod.AddSalaryForm })), {
+  loading: () => <div className="animate-pulse h-64 bg-gray-200 rounded-lg"></div>,
+});
+
+const SalaryList = dynamic(() => import('@/components/features/salary/salary-list').then(mod => ({ default: mod.SalaryList })), {
+  loading: () => <div className="animate-pulse h-32 bg-gray-200 rounded-lg"></div>,
+});
 
 export default function SalaryPage() {
   const [showAddForm, setShowAddForm] = useState(false);

@@ -1,5 +1,10 @@
 import type { NextConfig } from "next";
 
+// Bundle analyzer setup
+const withBundleAnalyzer = require('@next/bundle-analyzer')({
+  enabled: process.env.ANALYZE === 'true',
+});
+
 const nextConfig: NextConfig = {
   // Conditionally apply webpack config only for production builds
   // This prevents the Turbopack warning in development
@@ -24,4 +29,4 @@ const nextConfig: NextConfig = {
   },
 };
 
-export default nextConfig;
+export default withBundleAnalyzer(nextConfig);

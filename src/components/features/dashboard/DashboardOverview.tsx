@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
+import dynamic from 'next/dynamic';
 import { SummaryCard } from './SummaryCard';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -19,7 +20,11 @@ import { useAuth } from '@/contexts/AuthContext';
 import { LocalStorageService } from '@/services/localStorageService';
 import { EncryptionService } from '@/services/encryptionService';
 import { useAnalytics } from '@/hooks/useAnalytics';
-import { ExportDialog } from '../export';
+
+// Lazy load the export dialog since it's not used immediately
+const ExportDialog = dynamic(() => import('../export').then(mod => ({ default: mod.ExportDialog })), {
+  loading: () => null,
+});
 import type { 
   DecryptedSalaryData, 
   DecryptedBonusData, 
