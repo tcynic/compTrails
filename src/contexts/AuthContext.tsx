@@ -65,7 +65,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
     checkAuthStatus();
   }, [checkAuthStatus]);
 
-  const login = useCallback((provider: string = 'google') => {
+  const login = useCallback((provider: string = 'GoogleOAuth') => {
     setAuthState(prev => ({ ...prev, loading: true, error: null }));
     window.location.href = `/api/auth/login?provider=${provider}`;
   }, []);

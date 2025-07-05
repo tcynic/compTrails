@@ -6,7 +6,7 @@ import { randomBytes } from 'crypto';
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
-    const provider = searchParams.get('provider') || 'google';
+    const provider = searchParams.get('provider') || 'GoogleOAuth';
     
     // Generate a random state parameter for CSRF protection
     const state = randomBytes(32).toString('hex');
