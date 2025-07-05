@@ -7,11 +7,6 @@
   "env": {
     "NODE_ENV": "production"
   },
-  "build": {
-    "env": {
-      "NEXT_PUBLIC_ENVIRONMENT": "@environment"
-    }
-  },
   "functions": {
     "app/api/**/*.ts": {
       "maxDuration": 30

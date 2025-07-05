@@ -18,6 +18,7 @@ import {
 import { useAuth } from '@/contexts/AuthContext';
 import { LocalStorageService } from '@/services/localStorageService';
 import { EncryptionService } from '@/services/encryptionService';
+import { useAnalytics } from '@/hooks/useAnalytics';
 import { ExportDialog } from '../export';
 import type { 
   DecryptedSalaryData, 
@@ -39,6 +40,7 @@ export function DashboardOverview() {
   const [isLoading, setIsLoading] = useState(true);
   const [showExportDialog, setShowExportDialog] = useState(false);
   const { user } = useAuth();
+  const { trackPageView } = useAnalytics();
   const router = useRouter();
 
   const loadAllCompensationData = useCallback(async () => {
@@ -88,7 +90,10 @@ export function DashboardOverview() {
 
   useEffect(() => {
     loadAllCompensationData();
-  }, [loadAllCompensationData]);
+    
+    // Track dashboard view
+    trackPageView('dashboard_overview');
+  }, [loadAllCompensationData, trackPageView]);
 
   // Calculate current salary
   const currentSalary = useMemo(() => {

@@ -1,6 +1,7 @@
 'use client';
 
 import { createContext, useContext, useState, useEffect, useCallback, useMemo, ReactNode } from 'react';
+import { AnalyticsService } from '@/services/analyticsService';
 
 interface User {
   id: string;
@@ -44,6 +45,13 @@ export function AuthProvider({ children }: AuthProviderProps) {
           loading: false,
           error: null,
         }));
+        
+        // Track successful authentication check and identify user
+        AnalyticsService.identifyUser(user.id, {
+          has_first_name: !!user.firstName,
+          has_last_name: !!user.lastName,
+        });
+        AnalyticsService.trackEngagement('session_start');
       } else {
         setAuthState(() => ({
           user: null,
@@ -57,6 +65,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
         loading: false,
         error: 'Failed to check authentication status',
       }));
+      AnalyticsService.trackError('auth_check_failed', 'Network or server error');
     }
   }, []);
 
@@ -67,17 +76,29 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
   const login = useCallback((provider: string = 'GoogleOAuth') => {
     setAuthState(prev => ({ ...prev, loading: true, error: null }));
+    
+    // Track login attempt
+    AnalyticsService.trackAuth('login_attempt', { provider });
+    
     window.location.href = `/api/auth/login?provider=${provider}`;
   }, []);
 
   const logout = useCallback(async () => {
     try {
       setAuthState(prev => ({ ...prev, loading: true }));
+      
+      // Track logout attempt
+      AnalyticsService.trackAuth('logout');
+      AnalyticsService.trackEngagement('session_end');
+      
       const response = await fetch('/api/auth/logout', {
         method: 'POST',
       });
       
       if (response.ok) {
+        // Reset analytics tracking
+        AnalyticsService.reset();
+        
         setAuthState(() => ({
           user: null,
           loading: false,
@@ -93,6 +114,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
         loading: false,
         error: 'Failed to logout',
       }));
+      AnalyticsService.trackError('logout_failed', 'Network or server error');
     }
   }, []);
 
