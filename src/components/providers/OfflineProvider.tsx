@@ -36,6 +36,24 @@ export function OfflineProvider({ children }: OfflineProviderProps) {
 
     // Check for service worker registration (next-pwa handles this automatically)
     if ('serviceWorker' in navigator) {
+      // Set initial status based on existing registration
+      navigator.serviceWorker.getRegistration()
+        .then((registration) => {
+          if (registration) {
+            if (registration.active) {
+              setServiceWorkerStatus('active');
+            } else if (registration.installing) {
+              setServiceWorkerStatus('installing');
+            } else if (registration.waiting) {
+              setServiceWorkerStatus('waiting');
+            }
+          }
+        })
+        .catch(() => {
+          setServiceWorkerStatus('error');
+        });
+
+      // Wait for service worker to be ready
       navigator.serviceWorker.ready
         .then(() => {
           setServiceWorkerStatus('active');
@@ -43,6 +61,11 @@ export function OfflineProvider({ children }: OfflineProviderProps) {
         .catch(() => {
           setServiceWorkerStatus('error');
         });
+
+      // Listen for service worker state changes
+      navigator.serviceWorker.addEventListener('controllerchange', () => {
+        setServiceWorkerStatus('active');
+      });
     } else {
       setServiceWorkerStatus('not_supported');
     }

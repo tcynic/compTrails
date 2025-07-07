@@ -11,18 +11,29 @@ const withPWA = require('next-pwa')({
   disable: process.env.NODE_ENV === 'development',
   register: true,
   skipWaiting: true,
+  scope: '/',
+  sw: 'sw.js',
   runtimeCaching: [
     {
       urlPattern: /^https?.*/,
       handler: 'NetworkFirst',
       options: {
         cacheName: 'offlineCache',
+        networkTimeoutSeconds: 3,
         expiration: {
           maxEntries: 200,
+          maxAgeSeconds: 24 * 60 * 60, // 24 hours
+        },
+        cacheableResponse: {
+          statuses: [0, 200],
         },
       },
     },
   ],
+  fallbacks: {
+    document: '/offline.html', // Create a simple offline page
+  },
+  publicExcludes: ['!robots.txt', '!sitemap.xml'],
 });
 
 const nextConfig: NextConfig = {
