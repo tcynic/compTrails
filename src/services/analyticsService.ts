@@ -426,6 +426,140 @@ export class AnalyticsService {
   }
 
   /**
+   * Track sync configuration changes
+   */
+  static trackSyncConfigurationChange(
+    configType: 'emergency' | 'background' | 'intervals' | 'retries',
+    changes: Record<string, any>,
+    properties?: Partial<SyncEventProperties>
+  ) {
+    this.track('sync_configuration_changed', {
+      config_type: configType,
+      changes_count: Object.keys(changes).length,
+      ...properties,
+    });
+  }
+
+  /**
+   * Track sync health patterns and performance
+   */
+  static trackSyncHealthPattern(
+    pattern: 'success_rate' | 'timing_degradation' | 'error_spike' | 'queue_buildup',
+    metrics: {
+      success_rate?: number;
+      average_duration?: number;
+      error_count?: number;
+      queue_size?: number;
+      time_window?: number;
+    },
+    properties?: Partial<SyncEventProperties>
+  ) {
+    this.track('sync_health_pattern', {
+      pattern_type: pattern,
+      success_rate_range: metrics.success_rate ? this.getPercentageRange(metrics.success_rate) : undefined,
+      duration_range: metrics.average_duration ? this.getTimeRange(metrics.average_duration) : undefined,
+      error_count_range: metrics.error_count ? this.getCountRange(metrics.error_count) : undefined,
+      queue_size_range: metrics.queue_size ? this.getCountRange(metrics.queue_size) : undefined,
+      time_window_range: metrics.time_window ? this.getTimeRange(metrics.time_window) : undefined,
+      ...properties,
+    });
+  }
+
+  /**
+   * Track manual sync testing events
+   */
+  static trackManualSyncTest(
+    testType: 'emergency' | 'background' | 'regular' | 'health_check',
+    result: 'success' | 'failure' | 'partial',
+    metrics: {
+      duration?: number;
+      items_synced?: number;
+      error_type?: string;
+      method_used?: string;
+    },
+    properties?: Partial<SyncEventProperties>
+  ) {
+    this.track('manual_sync_test', {
+      test_type: testType,
+      result,
+      duration_range: metrics.duration ? this.getTimeRange(metrics.duration) : undefined,
+      items_synced_range: metrics.items_synced ? this.getCountRange(metrics.items_synced) : undefined,
+      error_type: metrics.error_type,
+      method_used: metrics.method_used,
+      ...properties,
+    });
+  }
+
+  /**
+   * Track sync performance benchmarks
+   */
+  static trackSyncPerformanceBenchmark(
+    benchmarkType: 'emergency_sync_speed' | 'background_sync_reliability' | 'offline_queue_recovery',
+    metrics: {
+      baseline_duration?: number;
+      current_duration?: number;
+      improvement_percentage?: number;
+      regression_percentage?: number;
+    },
+    properties?: Partial<SyncEventProperties>
+  ) {
+    this.track('sync_performance_benchmark', {
+      benchmark_type: benchmarkType,
+      baseline_duration_range: metrics.baseline_duration ? this.getTimeRange(metrics.baseline_duration) : undefined,
+      current_duration_range: metrics.current_duration ? this.getTimeRange(metrics.current_duration) : undefined,
+      improvement_range: metrics.improvement_percentage ? this.getPercentageRange(metrics.improvement_percentage) : undefined,
+      regression_range: metrics.regression_percentage ? this.getPercentageRange(metrics.regression_percentage) : undefined,
+      ...properties,
+    });
+  }
+
+  /**
+   * Track sync method effectiveness comparison
+   */
+  static trackSyncMethodEffectiveness(
+    comparison: {
+      beacon_success_rate?: number;
+      fetch_success_rate?: number;
+      background_sync_success_rate?: number;
+      regular_sync_success_rate?: number;
+    },
+    timeWindow: number,
+    properties?: Partial<SyncEventProperties>
+  ) {
+    this.track('sync_method_effectiveness', {
+      beacon_success_rate: comparison.beacon_success_rate ? this.getPercentageRange(comparison.beacon_success_rate) : undefined,
+      fetch_success_rate: comparison.fetch_success_rate ? this.getPercentageRange(comparison.fetch_success_rate) : undefined,
+      background_sync_success_rate: comparison.background_sync_success_rate ? this.getPercentageRange(comparison.background_sync_success_rate) : undefined,
+      regular_sync_success_rate: comparison.regular_sync_success_rate ? this.getPercentageRange(comparison.regular_sync_success_rate) : undefined,
+      time_window_range: this.getTimeRange(timeWindow),
+      ...properties,
+    });
+  }
+
+  /**
+   * Track sync diagnostic events
+   */
+  static trackSyncDiagnostic(
+    diagnosticType: 'health_check' | 'capability_test' | 'performance_test' | 'configuration_validation',
+    result: 'pass' | 'fail' | 'warning',
+    details: {
+      issue_type?: string;
+      recommendation?: string;
+      severity?: 'low' | 'medium' | 'high';
+    },
+    properties?: Partial<SyncEventProperties>
+  ) {
+    this.track('sync_diagnostic', {
+      diagnostic_type: diagnosticType,
+      result,
+      issue_type: details.issue_type,
+      recommendation: details.recommendation,
+      severity: details.severity,
+      ...properties,
+    });
+  }
+
+  /**
    * Track offline/online status changes
    */
   static trackConnectivity(status: 'online' | 'offline', properties?: AnalyticsEventProperties) {
@@ -494,6 +628,22 @@ export class AnalyticsService {
     if (hours < 6) return '1h-6h';
     if (hours < 24) return '6h-24h';
     return 'over-24h';
+  }
+
+  /**
+   * Convert percentage values to privacy-safe ranges
+   */
+  static getPercentageRange(percentage: number): string {
+    if (percentage < 0) return 'negative';
+    if (percentage === 0) return '0%';
+    if (percentage < 10) return '1-10%';
+    if (percentage < 25) return '11-25%';
+    if (percentage < 50) return '26-50%';
+    if (percentage < 75) return '51-75%';
+    if (percentage < 90) return '76-90%';
+    if (percentage < 100) return '91-99%';
+    if (percentage === 100) return '100%';
+    return 'over-100%';
   }
 
   /**

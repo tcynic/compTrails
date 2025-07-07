@@ -31,6 +31,7 @@ interface BackgroundSyncStatus {
   queueSize: number;
 }
 
+
 export function SyncMonitor() {
   const { isOnline, syncStatus, triggerSync, triggerEmergencySync, isPageVisible } = useOffline();
   const [syncStats, setSyncStats] = useState<SyncStats>({
