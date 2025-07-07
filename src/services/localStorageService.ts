@@ -29,7 +29,11 @@ export class LocalStorageService {
           const syncData = {
             userId: createdRecord.userId,
             type: createdRecord.type,
-            encryptedData: createdRecord.encryptedData,
+            encryptedData: {
+              data: createdRecord.encryptedData.encryptedData,
+              iv: createdRecord.encryptedData.iv,
+              salt: createdRecord.encryptedData.salt,
+            },
             currency: createdRecord.currency,
           };
           await this.addToSyncQueue('create', 'compensationRecords', id, syncData);
@@ -87,7 +91,11 @@ export class LocalStorageService {
       const updatedRecord = await db.compensationRecords.get(id);
       if (updatedRecord) {
         const syncData = {
-          encryptedData: updatedRecord.encryptedData,
+          encryptedData: {
+            data: updatedRecord.encryptedData.encryptedData,
+            iv: updatedRecord.encryptedData.iv,
+            salt: updatedRecord.encryptedData.salt,
+          },
           currency: updatedRecord.currency,
           version: updatedRecord.version,
         };

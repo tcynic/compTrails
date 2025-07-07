@@ -1,6 +1,6 @@
 import { db } from '@/lib/db/database';
 import { LocalStorageService } from './localStorageService';
-import type { PendingSyncItem, OfflineQueueItem } from '@/lib/db/types';
+import type { PendingSyncItem, OfflineQueueItem, CreateCompensationSyncData, UpdateCompensationSyncData } from '@/lib/db/types';
 import { api } from '../../convex/_generated/api';
 import { ConvexReactClient } from 'convex/react';
 import { Id } from '../../convex/_generated/dataModel';
@@ -159,7 +159,7 @@ export class SyncService {
           if (!data) {
             throw new Error('Missing data for create operation');
           }
-          await this.convexClient.mutation(api.compensationRecords.createCompensationRecord, data);
+          await this.convexClient.mutation(api.compensationRecords.createCompensationRecord, data as unknown as CreateCompensationSyncData);
           break;
         
         case 'update':
@@ -168,7 +168,7 @@ export class SyncService {
           }
           await this.convexClient.mutation(api.compensationRecords.updateCompensationRecord, {
             id: recordId as Id<"compensationRecords">,
-            ...data,
+            ...(data as unknown as UpdateCompensationSyncData),
           });
           break;
         
@@ -247,7 +247,7 @@ export class SyncService {
           if (!item.data) {
             throw new Error('Missing data for create operation');
           }
-          await this.convexClient.mutation(api.compensationRecords.createCompensationRecord, item.data);
+          await this.convexClient.mutation(api.compensationRecords.createCompensationRecord, item.data as unknown as CreateCompensationSyncData);
           break;
         
         case 'update':
@@ -256,7 +256,7 @@ export class SyncService {
           }
           await this.convexClient.mutation(api.compensationRecords.updateCompensationRecord, {
             id: item.recordId.toString() as Id<"compensationRecords">,
-            ...item.data,
+            ...(item.data as unknown as UpdateCompensationSyncData),
           });
           break;
         

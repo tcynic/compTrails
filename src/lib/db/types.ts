@@ -24,6 +24,28 @@ export interface CompensationRecord extends BaseRecord {
 export type SyncOperation = 'create' | 'update' | 'delete';
 export type SyncStatus = 'pending' | 'in_progress' | 'completed' | 'failed';
 
+// Sync data structures for different operations
+export interface CreateCompensationSyncData {
+  userId: string;
+  type: CompensationType;
+  encryptedData: {
+    data: string;
+    iv: string;
+    salt: string;
+  };
+  currency: string;
+}
+
+export interface UpdateCompensationSyncData {
+  encryptedData: {
+    data: string;
+    iv: string;
+    salt: string;
+  };
+  currency: string;
+  version: number;
+}
+
 export interface PendingSyncItem extends BaseRecord {
   operation: SyncOperation;
   tableName: string;
