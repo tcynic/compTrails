@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-This is a **Total Compensation Calculator** web application - a privacy-first, local-first application for tracking complete compensation packages including salary, bonuses, and equity grants. The project has completed Phase 1 (Foundation Implementation) and is currently in Phase 2 (Core Features Development).
+This is a **Total Compensation Calculator** web application - a privacy-first, local-first application for tracking complete compensation packages including salary, bonuses, and equity grants. The project is **production-ready** with all core features implemented and deployed.
 
 ## Technology Stack
 
@@ -24,15 +24,15 @@ This is a **Total Compensation Calculator** web application - a privacy-first, l
 - **Hosting**: Vercel Edge Functions
 - **Cache**: Vercel KV (Redis)
 - **Configuration**: Vercel Edge Config
-- **Analytics**: PostHog (privacy-first)
+- **Analytics**: PostHog (privacy-first, implemented with opt-out)
 
 ### Development Tools
 
 - **Language**: TypeScript (strict mode)
-- **Testing**: Vitest + Playwright
 - **Linting**: ESLint + Prettier
 - **CI/CD**: GitHub Actions
-- **Monitoring**: Sentry + Vercel Analytics
+- **Monitoring**: Vercel Analytics + PostHog (privacy-first)
+- **Bundle Analysis**: @next/bundle-analyzer
 
 ## Key Architectural Principles
 
@@ -63,20 +63,16 @@ This is a **Total Compensation Calculator** web application - a privacy-first, l
 # Development
 npm run dev              # Start development server with Turbopack
 npm run build           # Build for production
+npm run build:analyze   # Build with bundle analysis
 npm run start           # Start production server
 
 # Code Quality
 npm run lint            # ESLint checking
 npm run format          # Prettier formatting
 
-# Testing (Coming Soon)
-npm run test            # Run unit tests with Vitest
-npm run test:e2e        # Run E2E tests with Playwright
-npm run test:watch      # Watch mode for unit tests
-
-# Database (Coming Soon)
-npx convex dev          # Start Convex development
-npx convex deploy       # Deploy Convex functions
+# Deployment
+npm run deploy:staging  # Deploy to staging environment
+npm run deploy:prod     # Deploy to production environment
 ```
 
 ## Implemented Architecture
@@ -99,15 +95,17 @@ npx convex deploy       # Deploy Convex functions
 - **Local Service**: CRUD operations with encryption integration (`src/services/localStorageService.ts`)
 - **Sync Service**: Background synchronization with conflict resolution (`src/services/syncService.ts`)
 
-### Offline Capability
+### Offline Capability & PWA
+- **Progressive Web App**: Complete PWA implementation with next-pwa
 - **Service Worker**: Comprehensive caching with background sync (`public/sw.js`)
 - **SW Manager**: Service worker lifecycle management (`src/lib/serviceWorker.ts`)
 - **Offline Provider**: React context for offline state management (`src/components/providers/OfflineProvider.tsx`)
+- **PWA Registration**: Automatic registration with `src/components/providers/PWARegistration.tsx`
 
 ### Provider Architecture
 ```
 RootLayout
-├── ConvexClientProvider (Database connectivity)
+├── PHProvider (PostHog analytics)
 ├── AuthProvider (Authentication state)
 └── OfflineProvider (Offline/sync state)
 ```
@@ -158,10 +156,11 @@ IndexedDB → EncryptedData → EncryptionService.decryptData() → User Data
 
 ### Performance Considerations
 
-- **Bundle Optimization**: Webpack config excludes `argon2-browser` from server builds
-- **Code Splitting**: Use route-based splitting for large features
-- **Lazy Loading**: Implement virtual scrolling for large datasets
-- **Worker Threads**: Use Web Workers for encryption operations
+- **Bundle Optimization**: Production webpack config excludes `argon2-browser` from server builds
+- **PWA Caching**: Intelligent caching strategies with next-pwa for optimal performance
+- **Code Splitting**: Route-based splitting implemented for large features
+- **Lazy Loading**: PostHog and other non-critical components lazy loaded
+- **Analytics Optimization**: Property sanitization and privacy-first tracking
 
 ## Key Files and Directories
 
@@ -169,6 +168,14 @@ IndexedDB → EncryptedData → EncryptionService.decryptData() → User Data
 - `src/app/layout.tsx` - Root layout with provider hierarchy
 - `src/contexts/AuthContext.tsx` - Authentication state management
 - `src/components/providers/OfflineProvider.tsx` - Offline state management
+
+### Application Pages
+- `src/app/dashboard/page.tsx` - Main dashboard with compensation overview
+- `src/app/dashboard/salary/page.tsx` - Salary management interface
+- `src/app/dashboard/bonuses/page.tsx` - Bonus tracking and management
+- `src/app/dashboard/equity/page.tsx` - Equity grant management
+- `src/app/dashboard/reports/page.tsx` - Comprehensive reporting dashboard
+- `src/app/dashboard/settings/page.tsx` - User preferences and account settings
 
 ### Database Layer
 - `src/lib/db/database.ts` - Dexie database class with hooks
@@ -184,12 +191,21 @@ IndexedDB → EncryptedData → EncryptionService.decryptData() → User Data
 - `src/lib/workos.ts` - WorkOS client configuration
 - `src/app/api/auth/` - OAuth API routes
 
+### Analytics Integration
+- `src/app/posthog-client.tsx` - PostHog client configuration with privacy-first settings
+- `src/app/providers.tsx` - Analytics provider with lazy loading
+- `src/services/analyticsService.ts` - Comprehensive tracking service with sanitization
+- `src/hooks/useAnalytics.ts` - Custom analytics hook with opt-out support
+
 ### Offline Support
 - `public/sw.js` - Service worker with caching strategies
 - `src/lib/serviceWorker.ts` - Service worker lifecycle management
 
 ### Configuration
-- `next.config.ts` - Webpack configuration for crypto libraries
+- `next.config.ts` - Webpack configuration for crypto libraries + next-pwa setup
+- `vercel.json` - Deployment configuration with PWA headers and function settings
+- `postcss.config.mjs` - PostCSS configuration for Tailwind CSS
+- `eslint.config.mjs` - ESLint configuration with Prettier integration
 
 ### Project Documentation
 - `context/initialPRD.md` - Complete product requirements document with technical specifications
@@ -212,28 +228,47 @@ All markdown files must include a version history section at the bottom when edi
 
 Required environment variables for development:
 ```bash
+# Authentication (WorkOS)
 WORKOS_API_KEY=your_workos_api_key
 WORKOS_CLIENT_ID=your_workos_client_id
 WORKOS_WEBHOOK_SECRET=your_workos_webhook_secret
+
+# Analytics (PostHog) - Optional
+NEXT_PUBLIC_POSTHOG_KEY=your_posthog_key
+NEXT_PUBLIC_POSTHOG_HOST=https://app.posthog.com
+
+# Application
+NEXT_PUBLIC_APP_URL=http://localhost:3000
 ```
 
 ## Task Management
 
-- Keep track of tasks in `context/tasks.md`. Add new ones to that file if needed.  When tasks are complete mark them complete in that file.
-- Phase 1 (Foundation) is complete
-- Currently in Phase 2 (Core Features Development)
+- Keep track of tasks in `context/tasks.md`. Add new ones to that file if needed. When tasks are complete mark them complete in that file.
+- **Project Status**: Production-ready with all core features implemented
+- **Phase 1** (Foundation): Complete
+- **Phase 2** (Core Features): Complete
+- **Current Phase**: Maintenance and enhancements
 
 ## Important Implementation Notes
+
+### PWA Configuration
+- **next-pwa** integration with comprehensive caching strategies
+- Build exclusions to prevent 404 errors on precached files
+- Runtime caching for static assets, pages, and API routes
+- Offline fallback page (`/offline.html`)
+- Service worker optimized for background sync and caching
 
 ### Argon2 Compatibility
 - `argon2-browser` has build compatibility issues with Next.js
 - PBKDF2 fallback is implemented in `src/lib/crypto/keyDerivation.ts`
 - Webpack config excludes argon2-browser from server builds
+- Turbopack compatibility handled separately
 
-### Service Worker Registration
-- Service worker is registered in `src/lib/serviceWorker.ts`
-- Background sync capabilities for offline operations
-- Intelligent caching strategies implemented
+### Bundle Optimization
+- Bundle analyzer integration for size monitoring
+- Code splitting implemented for large dependencies
+- Lazy loading for charts and analytics components
+- Production-only webpack configurations to avoid Turbopack conflicts
 
 ### Database Hooks
 - Dexie hooks automatically manage timestamps and sync status
@@ -249,3 +284,4 @@ WORKOS_WEBHOOK_SECRET=your_workos_webhook_secret
 - v1.2 - Added best practice about using descriptive variable names (2024-02-22)
 - v1.3 - Added Task Management section with guidance for task tracking (2024-02-22)
 - v2.0 - Complete rewrite to reflect Phase 1 completion and current architecture (2025-01-03)
+- v2.1 - Updated to reflect production-ready status, added PostHog analytics details, PWA configuration, deployment setup, and implemented features documentation (2025-07-07)

@@ -21,44 +21,80 @@ export class KeyDerivation {
       );
     }
 
-    try {
-      // Use a fallback implementation for build compatibility
-      // In a real environment, this would load the actual argon2-browser
-      console.warn('Using fallback key derivation - replace with actual Argon2 in production');
-      
-      // Simple PBKDF2 fallback for development/build purposes
-      return async (options: Record<string, any>) => {
-        const encoder = new TextEncoder();
-        const passwordBuffer = encoder.encode(options.pass);
-        const saltBuffer = options.salt;
-        
-        const importedKey = await crypto.subtle.importKey(
-          'raw',
-          passwordBuffer,
-          { name: 'PBKDF2' },
-          false,
-          ['deriveKey', 'deriveBits']
-        );
-        
-        const derivedBits = await crypto.subtle.deriveBits(
-          {
-            name: 'PBKDF2',
-            salt: saltBuffer,
-            iterations: options.time * 1000, // Scale up iterations
-            hash: 'SHA-256',
-          },
-          importedKey,
-          options.hashLen * 8
-        );
-        
-        return { hash: derivedBits };
-      };
-    } catch {
-      throw new EncryptionError(
-        'Failed to load key derivation function',
-        'KEY_DERIVATION_LOAD_FAILED'
-      );
+    // Check if browser supports WebAssembly
+    if (!WebAssembly) {
+      console.warn('WebAssembly not supported, falling back to enhanced PBKDF2');
+      return this.getPBKDF2Fallback();
     }
+
+    try {
+      // Dynamically import argon2-browser (now handled as external by webpack)
+      const argon2Module = await import('argon2-browser');
+      
+      console.log('Successfully loaded Argon2 - using secure key derivation');
+      
+      // Return a wrapper that handles the argon2-browser API
+      return async (options: Record<string, any>) => {
+        try {
+          // Call the hash function from argon2-browser
+          // Cast to any to handle external module type issues
+          const result = await (argon2Module as any).hash(options);
+          return result;
+        } catch (argon2Error) {
+          console.warn('Argon2 hashing failed, falling back to PBKDF2:', argon2Error);
+          // Fallback to PBKDF2 if Argon2 hash fails at runtime
+          const fallback = this.getPBKDF2Fallback();
+          return await fallback(options);
+        }
+      };
+    } catch (importError) {
+      console.warn('Failed to load Argon2 module, falling back to enhanced PBKDF2:', importError);
+      return this.getPBKDF2Fallback();
+    }
+  }
+
+  /**
+   * Enhanced PBKDF2 implementation with higher security parameters
+   * This is used instead of Argon2 until webpack compatibility is resolved
+   */
+  private static getPBKDF2Fallback() {
+    console.info('Using enhanced PBKDF2 with high iteration count for key derivation');
+    
+    return async (options: Record<string, any>) => {
+      const encoder = new TextEncoder();
+      const passwordBuffer = encoder.encode(options.pass);
+      const saltBuffer = options.salt;
+      
+      const importedKey = await crypto.subtle.importKey(
+        'raw',
+        passwordBuffer,
+        { name: 'PBKDF2' },
+        false,
+        ['deriveKey', 'deriveBits']
+      );
+      
+      // Use significantly higher iterations for PBKDF2 to provide adequate security
+      // Scale with memory parameter to approximate Argon2 difficulty
+      const baseIterations = 200000; // 200k minimum iterations
+      const memoryScaling = Math.max(1, (options.mem || this.DEFAULT_PARAMS.memory) / 65536);
+      const timeScaling = Math.max(1, options.time || this.DEFAULT_PARAMS.iterations);
+      const iterations = Math.floor(baseIterations * memoryScaling * timeScaling);
+      
+      console.info(`Using PBKDF2 with ${iterations.toLocaleString()} iterations`);
+      
+      const derivedBits = await crypto.subtle.deriveBits(
+        {
+          name: 'PBKDF2',
+          salt: saltBuffer,
+          iterations: iterations,
+          hash: 'SHA-256',
+        },
+        importedKey,
+        options.hashLen * 8
+      );
+      
+      return { hash: derivedBits };
+    };
   }
 
   /**

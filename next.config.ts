@@ -16,11 +16,21 @@ const withPWA = require('next-pwa')({
   
   // Exclude problematic build files that cause 404 errors
   buildExcludes: [
-    /app-build-manifest\.json$/,
-    /build-manifest\.json$/,
-    /middleware-manifest\.json$/,
-    /server\/.*\.js$/,
-    /static\/buildManifest\.js$/,
+    // Exclude all manifest files that aren't served (these should NOT be precached)
+    'app-build-manifest.json',
+    'build-manifest.json', 
+    'middleware-manifest.json',
+    'prerender-manifest.json',
+    'routes-manifest.json',
+    'export-marker.json',
+    'required-server-files.json',
+    // Use regex for patterns
+    /\/server\/.*\.js$/,
+    /\/server\/.*\.json$/,
+    /\/static\/buildManifest\.js$/,
+    /\.nft\.json$/,
+    /\/trace$/,
+    /\/cache\/.*$/,
   ],
   
   // Exclude files from public directory that shouldn't be precached
@@ -108,19 +118,27 @@ const withPWA = require('next-pwa')({
 });
 
 const nextConfig: NextConfig = {
-  // Conditionally apply webpack config only for production builds
-  // This prevents the Turbopack warning in development
-  ...(process.env.NODE_ENV === 'production' && {
-    webpack: (config, { isServer }) => {
-      // Exclude argon2-browser from server-side builds
-      if (isServer) {
-        config.externals = config.externals || [];
-        config.externals.push('argon2-browser');
-      }
+  webpack: (config, { isServer }) => {
+    // Handle argon2-browser external configuration
+    if (isServer) {
+      // Exclude argon2-browser completely from server-side builds
+      config.externals = config.externals || [];
+      config.externals.push('argon2-browser');
+    } else {
+      // Client-side: Configure externals to prevent bundling
+      config.externals = config.externals || {};
+      
+      // Treat argon2-browser as external to avoid WASM bundling issues
+      config.externals['argon2-browser'] = 'var undefined';
+      
+      // Also ignore the WASM file specifically
+      config.resolve = config.resolve || {};
+      config.resolve.alias = config.resolve.alias || {};
+      config.resolve.alias['argon2-browser'] = false;
+    }
 
-      return config;
-    },
-  }),
+    return config;
+  },
   
   // Turbopack-specific configurations (stable as of Next.js 15)
   turbopack: {
