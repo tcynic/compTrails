@@ -13,15 +13,50 @@ const withPWA = require('next-pwa')({
   skipWaiting: true,
   scope: '/',
   sw: 'sw.js',
+  
+  // Exclude problematic build files that cause 404 errors
+  buildExcludes: [
+    /app-build-manifest\.json$/,
+    /build-manifest\.json$/,
+    /middleware-manifest\.json$/,
+    /server\/.*\.js$/,
+    /static\/buildManifest\.js$/,
+  ],
+  
+  // Exclude files from public directory that shouldn't be precached
+  publicExcludes: [
+    '!robots.txt', 
+    '!sitemap.xml',
+    '!favicon.ico',
+    '!manifest.json'
+  ],
+  
+  // More conservative runtime caching approach
   runtimeCaching: [
+    // Cache pages with NetworkFirst strategy
     {
-      urlPattern: /^https?.*/,
+      urlPattern: /^https?.*\/_next\/static\/.*/,
+      handler: 'CacheFirst',
+      options: {
+        cacheName: 'static-cache',
+        expiration: {
+          maxEntries: 100,
+          maxAgeSeconds: 7 * 24 * 60 * 60, // 7 days
+        },
+        cacheableResponse: {
+          statuses: [0, 200],
+        },
+      },
+    },
+    // Cache application pages
+    {
+      urlPattern: /^https?.*\/(dashboard|login|settings).*/,
       handler: 'NetworkFirst',
       options: {
-        cacheName: 'offlineCache',
+        cacheName: 'pages-cache',
         networkTimeoutSeconds: 3,
         expiration: {
-          maxEntries: 200,
+          maxEntries: 50,
           maxAgeSeconds: 24 * 60 * 60, // 24 hours
         },
         cacheableResponse: {
@@ -29,11 +64,47 @@ const withPWA = require('next-pwa')({
         },
       },
     },
+    // Cache API routes with NetworkFirst (shorter cache time)
+    {
+      urlPattern: /^https?.*\/api\/.*/,
+      handler: 'NetworkFirst',
+      options: {
+        cacheName: 'api-cache',
+        networkTimeoutSeconds: 2,
+        expiration: {
+          maxEntries: 30,
+          maxAgeSeconds: 5 * 60, // 5 minutes
+        },
+        cacheableResponse: {
+          statuses: [0, 200],
+        },
+      },
+    },
+    // Cache other resources with NetworkFirst as fallback
+    {
+      urlPattern: /^https?.*/,
+      handler: 'NetworkFirst',
+      options: {
+        cacheName: 'general-cache',
+        networkTimeoutSeconds: 3,
+        expiration: {
+          maxEntries: 100,
+          maxAgeSeconds: 60 * 60, // 1 hour
+        },
+        cacheableResponse: {
+          statuses: [0, 200],
+        },
+      },
+    },
   ],
+  
   fallbacks: {
-    document: '/offline.html', // Create a simple offline page
+    document: '/offline.html',
   },
-  publicExcludes: ['!robots.txt', '!sitemap.xml'],
+  
+  // More lenient caching options
+  cacheOnFrontEndNav: true,
+  reloadOnOnline: false,
 });
 
 const nextConfig: NextConfig = {
