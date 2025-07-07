@@ -42,11 +42,20 @@ export interface PerformanceEventProperties extends AnalyticsEventProperties {
  * - Users can opt-out of tracking
  */
 export class AnalyticsService {
-  private static isEnabled = true;
-  private static isInitialized = false;
-  private static adBlockerDetected = false;
-  private static failedRequests = 0;
-  private static maxFailedRequests = 3;
+  private static isEnabled: boolean = true;
+  private static isInitialized: boolean = false;
+  private static adBlockerDetected: boolean = false;
+  private static failedRequests: number = 0;
+  private static maxFailedRequests: number = 3;
+
+  // Static initialization block to ensure properties are properly set
+  static {
+    this.isEnabled = true;
+    this.isInitialized = false;
+    this.adBlockerDetected = false;
+    this.failedRequests = 0;
+    this.maxFailedRequests = 3;
+  }
 
   /**
    * Initialize the analytics service
@@ -65,6 +74,16 @@ export class AnalyticsService {
    * Mark that an ad blocker has been detected
    */
   static setAdBlockerDetected(detected: boolean) {
+    // Defensive check to ensure static properties are initialized
+    if (typeof this.adBlockerDetected === 'undefined') {
+      console.warn('AnalyticsService not properly initialized, initializing now');
+      this.isEnabled = true;
+      this.isInitialized = false;
+      this.adBlockerDetected = false;
+      this.failedRequests = 0;
+      this.maxFailedRequests = 3;
+    }
+    
     this.adBlockerDetected = detected;
     if (detected) {
       this.isEnabled = false;
@@ -76,6 +95,11 @@ export class AnalyticsService {
    * Check if ad blocker is detected
    */
   static isAdBlockerDetected(): boolean {
+    // Defensive check to ensure static properties are initialized
+    if (typeof this.adBlockerDetected === 'undefined') {
+      console.warn('AnalyticsService not properly initialized, returning false');
+      return false;
+    }
     return this.adBlockerDetected;
   }
 
@@ -95,6 +119,16 @@ export class AnalyticsService {
    * Enable or disable analytics tracking
    */
   static setEnabled(enabled: boolean) {
+    // Defensive check to ensure static properties are initialized
+    if (typeof this.isEnabled === 'undefined') {
+      console.warn('AnalyticsService not properly initialized, initializing now');
+      this.isEnabled = true;
+      this.isInitialized = false;
+      this.adBlockerDetected = false;
+      this.failedRequests = 0;
+      this.maxFailedRequests = 3;
+    }
+    
     this.isEnabled = enabled;
     
     if (typeof window !== 'undefined') {
@@ -120,6 +154,11 @@ export class AnalyticsService {
    * Check if analytics is enabled
    */
   static getEnabled(): boolean {
+    // Defensive check to ensure static properties are initialized
+    if (typeof this.isEnabled === 'undefined' || typeof this.isInitialized === 'undefined') {
+      console.warn('AnalyticsService not properly initialized, returning false');
+      return false;
+    }
     return this.isEnabled && this.isInitialized;
   }
 

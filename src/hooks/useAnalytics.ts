@@ -136,8 +136,21 @@ export function useAnalytics() {
     trackError: safeTrackError,
     
     // Analytics preferences (wrapped for safety)
-    setEnabled: AnalyticsService.setEnabled, // This method has its own safety checks
-    getEnabled: AnalyticsService.getEnabled, // This method doesn't depend on PostHog
+    setEnabled: (enabled: boolean) => {
+      try {
+        AnalyticsService.setEnabled(enabled);
+      } catch (error) {
+        console.warn('Failed to set analytics enabled state:', error);
+      }
+    },
+    getEnabled: () => {
+      try {
+        return AnalyticsService.getEnabled();
+      } catch (error) {
+        console.warn('Failed to get analytics enabled state:', error);
+        return false;
+      }
+    },
     identifyUser: safeIdentifyUser,
     reset: safeReset,
     
@@ -148,6 +161,13 @@ export function useAnalytics() {
     isReady: isPostHogReady,
     
     // Ad blocker detection
-    isAdBlockerDetected: AnalyticsService.isAdBlockerDetected,
+    isAdBlockerDetected: () => {
+      try {
+        return AnalyticsService.isAdBlockerDetected();
+      } catch (error) {
+        console.warn('Failed to get ad blocker detection state:', error);
+        return false;
+      }
+    },
   };
 }
