@@ -190,8 +190,10 @@ IndexedDB → EncryptedData → EncryptionService.decryptData() → User Data
 
 ### Configuration
 - `next.config.ts` - Webpack configuration for crypto libraries
-- `context/initialPRD.md` - Complete product requirements document
-- `context/tasks.md` - Detailed development task breakdown
+
+### Project Documentation
+- `context/initialPRD.md` - Complete product requirements document with technical specifications
+- `context/tasks.md` - Detailed development task breakdown organized by implementation phases
 
 ## Development Rules
 

@@ -6,6 +6,7 @@ import { usePostHog } from 'posthog-js/react';
 
 import posthog from 'posthog-js';
 import { PostHogProvider as PHProvider } from 'posthog-js/react';
+import { AnalyticsService } from '@/services/analyticsService';
 
 // PostHog configuration
 const ENVIRONMENT = process.env.NEXT_PUBLIC_ENVIRONMENT || 'development';
@@ -52,6 +53,9 @@ export function PostHogClient({ children }: { children: React.ReactNode }) {
           if (ENVIRONMENT === 'development') {
             posthog.opt_out_capturing();
           }
+
+          // Initialize the analytics service now that PostHog is loaded
+          AnalyticsService.initialize();
         },
       });
     }
@@ -73,14 +77,18 @@ function PostHogPageView(): null {
   const posthog = usePostHog();
 
   useEffect(() => {
-    if (pathname && posthog) {
-      let url = window.location.origin + pathname;
-      if (searchParams.toString()) {
-        url = url + '?' + searchParams.toString();
+    if (pathname && posthog && typeof posthog.capture === 'function') {
+      try {
+        let url = window.location.origin + pathname;
+        if (searchParams.toString()) {
+          url = url + '?' + searchParams.toString();
+        }
+        posthog.capture('$pageview', {
+          $current_url: url,
+        });
+      } catch (error) {
+        console.warn('PostHog pageview tracking failed:', error);
       }
-      posthog.capture('$pageview', {
-        $current_url: url,
-      });
     }
   }, [pathname, searchParams, posthog]);
 

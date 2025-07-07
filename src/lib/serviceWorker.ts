@@ -23,11 +23,27 @@ export class ServiceWorkerManager {
       return null;
     }
 
+    // Skip service worker registration in development unless explicitly enabled
+    if (process.env.NODE_ENV === 'development' && !process.env.NEXT_PUBLIC_ENABLE_SW) {
+      console.log('Service worker disabled in development');
+      this.notifyListeners(this.status.unsupported);
+      return null;
+    }
+
     try {
       this.notifyListeners(this.status.installing);
       
+      // Check if sw.js is available before registering
+      const swResponse = await fetch('/sw.js', { method: 'HEAD' });
+      if (!swResponse.ok) {
+        console.warn('Service worker file not found, skipping registration');
+        this.notifyListeners(this.status.error);
+        return null;
+      }
+      
       const registration = await navigator.serviceWorker.register('/sw.js', {
         scope: '/',
+        updateViaCache: 'none', // Always check for updates
       });
 
       this.registration = registration;
@@ -42,6 +58,14 @@ export class ServiceWorkerManager {
       return registration;
     } catch (error) {
       console.error('Service worker registration failed:', error);
+      
+      // Provide more specific error handling
+      if (error instanceof TypeError && error.message.includes('404')) {
+        console.warn('Service worker file not found (404). This is expected in some deployment environments.');
+      } else if (error instanceof TypeError && error.message.includes('Failed to register')) {
+        console.warn('Service worker registration blocked. This may be due to security policies.');
+      }
+      
       this.notifyListeners(this.status.error);
       return null;
     }

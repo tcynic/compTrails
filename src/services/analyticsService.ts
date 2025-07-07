@@ -64,10 +64,20 @@ export class AnalyticsService {
     this.isEnabled = enabled;
     
     if (typeof window !== 'undefined') {
-      if (enabled) {
-        posthog.opt_in_capturing();
-      } else {
-        posthog.opt_out_capturing();
+      try {
+        // Check if PostHog is initialized before changing opt-in status
+        if (!posthog || !posthog.__loaded || typeof posthog.opt_in_capturing !== 'function') {
+          console.warn('PostHog not yet loaded, caching preference');
+          return;
+        }
+
+        if (enabled) {
+          posthog.opt_in_capturing();
+        } else {
+          posthog.opt_out_capturing();
+        }
+      } catch (error) {
+        console.warn('Failed to set analytics preference:', error);
       }
     }
   }
@@ -88,6 +98,12 @@ export class AnalyticsService {
     }
 
     try {
+      // Check if PostHog is initialized before tracking
+      if (!posthog || !posthog.__loaded || typeof posthog.capture !== 'function') {
+        console.warn('PostHog not yet loaded, skipping event:', eventName);
+        return;
+      }
+
       posthog.capture(eventName, {
         ...properties,
         timestamp: Date.now(),
@@ -106,6 +122,12 @@ export class AnalyticsService {
     }
 
     try {
+      // Check if PostHog is initialized before identifying
+      if (!posthog || !posthog.__loaded || typeof posthog.identify !== 'function') {
+        console.warn('PostHog not yet loaded, skipping user identification');
+        return;
+      }
+
       // Only track anonymous user ID and safe properties
       posthog.identify(userId, {
         ...properties,
@@ -246,6 +268,12 @@ export class AnalyticsService {
     }
 
     try {
+      // Check if PostHog is initialized before resetting
+      if (!posthog || !posthog.__loaded || typeof posthog.reset !== 'function') {
+        console.warn('PostHog not yet loaded, skipping reset');
+        return;
+      }
+
       posthog.reset();
     } catch (error) {
       console.warn('Analytics reset failed:', error);
