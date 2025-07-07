@@ -9,7 +9,7 @@ import { Controller } from 'react-hook-form';
 import { FormItem, FormControl, FormMessage } from '@/components/ui/form-field';
 import { FormLabel } from '@/components/ui/form-label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { bonusSchema, type BonusFormData, bonusTypeOptions, currencyOptions } from '@/lib/validations/bonus';
 import { useAuth } from '@/contexts/AuthContext';
 import { EncryptionService } from '@/services/encryptionService';
@@ -78,6 +78,9 @@ export function AddBonusForm({ isOpen, onClose, onSuccess }: AddBonusFormProps) 
       <DialogContent className="max-w-2xl">
         <DialogHeader>
           <DialogTitle>Add New Bonus</DialogTitle>
+          <DialogDescription>
+            Record bonus information including amount, type, and payment details.
+          </DialogDescription>
         </DialogHeader>
         
         <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">

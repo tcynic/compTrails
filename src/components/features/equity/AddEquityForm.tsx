@@ -9,7 +9,7 @@ import { Controller } from 'react-hook-form';
 import { FormItem, FormControl, FormMessage } from '@/components/ui/form-field';
 import { FormLabel } from '@/components/ui/form-label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { 
   equitySchema, 
   type EquityFormData, 
@@ -101,6 +101,9 @@ export function AddEquityForm({ isOpen, onClose, onSuccess }: AddEquityFormProps
       <DialogContent className="max-w-2xl">
         <DialogHeader>
           <DialogTitle>Add New Equity Grant</DialogTitle>
+          <DialogDescription>
+            Record a new equity grant including shares, vesting schedule, and other compensation details.
+          </DialogDescription>
         </DialogHeader>
         
         <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">

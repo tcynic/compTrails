@@ -9,7 +9,7 @@ import { Controller } from 'react-hook-form';
 import { FormItem, FormControl, FormMessage } from '@/components/ui/form-field';
 import { FormLabel } from '@/components/ui/form-label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { salarySchema, type SalaryFormData, currencyOptions } from '@/lib/validations/salary';
 import { useAuth } from '@/contexts/AuthContext';
 import { EncryptionService } from '@/services/encryptionService';
@@ -79,6 +79,9 @@ export function AddSalaryForm({ isOpen, onClose, onSuccess }: AddSalaryFormProps
       <DialogContent className="max-w-2xl">
         <DialogHeader>
           <DialogTitle>Add New Salary</DialogTitle>
+          <DialogDescription>
+            Record your salary information including base pay, currency, and effective dates.
+          </DialogDescription>
         </DialogHeader>
         
         <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">

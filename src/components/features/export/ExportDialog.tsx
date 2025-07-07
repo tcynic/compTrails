@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { FormItem, FormControl } from '@/components/ui/form-field';
@@ -204,6 +204,9 @@ export function ExportDialog({ isOpen, onClose, preselectedType = 'all' }: Expor
             <Download className="h-5 w-5" />
             Export Compensation Data
           </DialogTitle>
+          <DialogDescription>
+            Export your compensation data in various formats with filtering and preview options.
+          </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-6">
