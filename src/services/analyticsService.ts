@@ -32,6 +32,21 @@ export interface PerformanceEventProperties extends AnalyticsEventProperties {
   error_type?: string;
 }
 
+export interface SyncEventProperties extends AnalyticsEventProperties {
+  sync_type: 'regular' | 'emergency' | 'background';
+  trigger_type?: 'manual' | 'beforeunload' | 'visibilitychange' | 'pagehide' | 'auto';
+  method?: 'beacon' | 'fetch' | 'background_sync' | 'regular';
+  pending_items?: number;
+  duration_ms?: number;
+  success: boolean;
+  error_type?: string;
+  // Browser support as separate boolean fields to match AnalyticsEventProperties constraint
+  background_sync_support?: boolean;
+  beacon_api_support?: boolean;
+  service_worker_support?: boolean;
+  visibility_api_support?: boolean;
+}
+
 /**
  * Privacy-first analytics service for CompTrails
  * 
@@ -324,6 +339,93 @@ export class AnalyticsService {
   }
 
   /**
+   * Track emergency sync events with detailed properties
+   */
+  static trackEmergencySync(properties: SyncEventProperties) {
+    this.track('emergency_sync_triggered', {
+      ...properties,
+      // Sanitize data to ensure privacy
+      pending_items: properties.pending_items ? this.getCountRange(properties.pending_items) : undefined,
+    });
+  }
+
+  /**
+   * Track background sync events
+   */
+  static trackBackgroundSync(
+    event: 'registered' | 'completed' | 'failed' | 'queue_processed',
+    properties: Partial<SyncEventProperties> = {}
+  ) {
+    this.track(`background_sync_${event}`, {
+      sync_type: 'background',
+      ...properties,
+      pending_items: properties.pending_items ? this.getCountRange(properties.pending_items) : undefined,
+    });
+  }
+
+  /**
+   * Track sync method usage and effectiveness
+   */
+  static trackSyncMethod(
+    method: 'beacon' | 'fetch' | 'background_sync' | 'regular',
+    success: boolean,
+    properties: Partial<SyncEventProperties> = {}
+  ) {
+    this.track('sync_method_usage', {
+      method,
+      success,
+      sync_type: properties.sync_type || 'regular',
+      duration_ms: properties.duration_ms,
+      error_type: properties.error_type,
+    });
+  }
+
+  /**
+   * Track page lifecycle events that trigger sync
+   */
+  static trackPageLifecycleSync(
+    trigger: 'beforeunload' | 'visibilitychange' | 'pagehide',
+    success: boolean,
+    properties: Partial<SyncEventProperties> = {}
+  ) {
+    this.track('page_lifecycle_sync', {
+      trigger_type: trigger,
+      success,
+      sync_type: 'emergency',
+      ...properties,
+      pending_items: properties.pending_items ? this.getCountRange(properties.pending_items) : undefined,
+    });
+  }
+
+  /**
+   * Track browser capability detection for sync features
+   */
+  static trackBrowserCapabilities(capabilities: {
+    background_sync: boolean;
+    beacon_api: boolean;
+    service_worker: boolean;
+    visibility_api: boolean;
+  }) {
+    this.track('browser_capabilities', {
+      background_sync_support: capabilities.background_sync,
+      beacon_api_support: capabilities.beacon_api,
+      service_worker_support: capabilities.service_worker,
+      visibility_api_support: capabilities.visibility_api,
+      user_agent_hash: this.hashUserAgent(), // Privacy-safe browser identification
+    });
+  }
+
+  /**
+   * Track sync queue health metrics
+   */
+  static trackSyncQueueHealth(queueSize: number, oldestItemAge?: number) {
+    this.track('sync_queue_health', {
+      queue_size_range: this.getCountRange(queueSize),
+      oldest_item_age_range: oldestItemAge ? this.getTimeRange(oldestItemAge) : undefined,
+    });
+  }
+
+  /**
    * Track offline/online status changes
    */
   static trackConnectivity(status: 'online' | 'offline', properties?: AnalyticsEventProperties) {
@@ -370,6 +472,83 @@ export class AnalyticsService {
     if (amount < 300000) return '200k-300k';
     if (amount < 500000) return '300k-500k';
     return 'over-500k';
+  }
+
+  /**
+   * Convert time values to privacy-safe ranges (in milliseconds)
+   */
+  static getTimeRange(timeMs: number): string {
+    const seconds = timeMs / 1000;
+    const minutes = seconds / 60;
+    const hours = minutes / 60;
+    
+    if (seconds < 1) return 'under-1s';
+    if (seconds < 5) return '1s-5s';
+    if (seconds < 10) return '5s-10s';
+    if (seconds < 30) return '10s-30s';
+    if (minutes < 1) return '30s-1m';
+    if (minutes < 5) return '1m-5m';
+    if (minutes < 15) return '5m-15m';
+    if (minutes < 30) return '15m-30m';
+    if (hours < 1) return '30m-1h';
+    if (hours < 6) return '1h-6h';
+    if (hours < 24) return '6h-24h';
+    return 'over-24h';
+  }
+
+  /**
+   * Create a privacy-safe hash of the user agent
+   */
+  static hashUserAgent(): string {
+    if (typeof window === 'undefined' || !window.navigator?.userAgent) {
+      return 'unknown';
+    }
+
+    const userAgent = window.navigator.userAgent;
+    
+    // Extract key browser info without full user agent string
+    const browserInfo = {
+      platform: navigator.platform || 'unknown',
+      language: navigator.language || 'unknown',
+      cookieEnabled: navigator.cookieEnabled,
+      onLine: navigator.onLine,
+      // Extract browser name and major version only
+      browser: this.extractBrowserInfo(userAgent),
+    };
+
+    // Create a simple hash of the browser info
+    const infoString = JSON.stringify(browserInfo);
+    let hash = 0;
+    for (let i = 0; i < infoString.length; i++) {
+      const char = infoString.charCodeAt(i);
+      hash = ((hash << 5) - hash) + char;
+      hash = hash & hash; // Convert to 32-bit integer
+    }
+    
+    return Math.abs(hash).toString(36);
+  }
+
+  /**
+   * Extract basic browser information (privacy-safe)
+   */
+  private static extractBrowserInfo(userAgent: string): string {
+    if (userAgent.includes('Chrome')) {
+      const match = userAgent.match(/Chrome\/(\d+)/);
+      return match ? `Chrome ${match[1]}` : 'Chrome';
+    }
+    if (userAgent.includes('Firefox')) {
+      const match = userAgent.match(/Firefox\/(\d+)/);
+      return match ? `Firefox ${match[1]}` : 'Firefox';
+    }
+    if (userAgent.includes('Safari') && !userAgent.includes('Chrome')) {
+      const match = userAgent.match(/Version\/(\d+)/);
+      return match ? `Safari ${match[1]}` : 'Safari';
+    }
+    if (userAgent.includes('Edge')) {
+      const match = userAgent.match(/Edge\/(\d+)/);
+      return match ? `Edge ${match[1]}` : 'Edge';
+    }
+    return 'Other';
   }
 
   /**

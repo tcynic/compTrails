@@ -893,6 +893,172 @@ export class SyncService {
       });
     }, 0);
   }
+
+  /**
+   * Register background sync for specific operation
+   */
+  static async registerBackgroundSync(operation: string, recordId: string): Promise<boolean> {
+    if (!('serviceWorker' in navigator) || !('sync' in window.ServiceWorkerRegistration.prototype)) {
+      logSyncEvent('warn', 'Background Sync API not supported');
+      return false;
+    }
+
+    try {
+      const registration = await navigator.serviceWorker.ready;
+      const tag = `compensation-sync-${operation}-${recordId}`;
+      
+      // Cast to include sync property (Background Sync API)
+      await (registration as any).sync.register(tag);
+      
+      // Send message to service worker with operation details
+      if (registration.active) {
+        registration.active.postMessage({
+          type: 'REGISTER_BACKGROUND_SYNC',
+          tag,
+          operation,
+          recordId,
+        });
+      }
+      
+      logSyncEvent('info', 'Background sync registered', { tag, operation, recordId });
+      return true;
+      
+    } catch (error) {
+      logSyncEvent('error', 'Background sync registration failed', error);
+      return false;
+    }
+  }
+
+  /**
+   * Check if Background Sync API is supported
+   */
+  static isBackgroundSyncSupported(): boolean {
+    return (
+      'serviceWorker' in navigator &&
+      'sync' in window.ServiceWorkerRegistration.prototype
+    );
+  }
+
+  /**
+   * Get background sync status
+   */
+  static async getBackgroundSyncStatus(): Promise<{
+    supported: boolean;
+    registered: string[];
+    queueSize: number;
+  }> {
+    const supported = this.isBackgroundSyncSupported();
+    
+    if (!supported) {
+      return { supported: false, registered: [], queueSize: 0 };
+    }
+
+    try {
+      const registration = await navigator.serviceWorker.ready;
+      const tags = await (registration as any).sync.getTags();
+      
+      // Get queue size from pending sync items
+      const queueSize = await this.getBackgroundSyncQueueSize();
+      
+      return {
+        supported: true,
+        registered: tags.filter((tag: string) => tag.startsWith('compensation-sync')),
+        queueSize,
+      };
+      
+    } catch (error) {
+      logSyncEvent('error', 'Error getting background sync status', error);
+      return { supported: true, registered: [], queueSize: 0 };
+    }
+  }
+
+  /**
+   * Get the size of the background sync queue
+   */
+  private static async getBackgroundSyncQueueSize(): Promise<number> {
+    try {
+      const [pendingSync, offlineQueue] = await Promise.all([
+        db.pendingSync.where('status').equals('pending').count(),
+        db.offlineQueue.where('status').equals('pending').count(),
+      ]);
+
+      return pendingSync + offlineQueue;
+    } catch (error) {
+      logSyncEvent('error', 'Error getting background sync queue size', error);
+      return 0;
+    }
+  }
+
+  /**
+   * Setup service worker message listener for background sync events
+   */
+  static setupBackgroundSyncListener(): () => void {
+    if (!('serviceWorker' in navigator)) {
+      return () => {};
+    }
+
+    const handleMessage = (event: MessageEvent) => {
+      if (event.data && event.data.type === 'sw-background-sync') {
+        const { payload } = event.data;
+        
+        logSyncEvent('info', 'Background sync event received', payload);
+        
+        // Handle different sync events
+        switch (payload.event) {
+          case 'emergency-sync-success':
+            this.notifyListeners(this.syncStatus.idle);
+            break;
+            
+          case 'emergency-sync-failed':
+            this.notifyListeners(this.syncStatus.error);
+            break;
+            
+          case 'sync-success':
+            this.notifyListeners(this.syncStatus.idle);
+            // Trigger a regular sync to clean up any remaining items
+            this.triggerSync();
+            break;
+            
+          case 'sync-failed':
+            logSyncEvent('warn', 'Background sync failed', payload);
+            break;
+            
+          case 'background-sync-registered':
+            logSyncEvent('info', 'Background sync registered by service worker', payload);
+            break;
+            
+          case 'background-sync-registration-failed':
+            logSyncEvent('error', 'Background sync registration failed in service worker', payload);
+            break;
+            
+          default:
+            logSyncEvent('debug', 'Unknown background sync event', payload);
+        }
+      }
+    };
+
+    navigator.serviceWorker.addEventListener('message', handleMessage);
+    
+    // Return cleanup function
+    return () => {
+      navigator.serviceWorker.removeEventListener('message', handleMessage);
+    };
+  }
+
+  /**
+   * Enhanced add to offline queue with background sync support
+   */
+  static async addToOfflineQueueWithBackgroundSync(
+    operation: 'create' | 'update' | 'delete',
+    recordId: string,
+    data?: any
+  ): Promise<void> {
+    // Add to offline queue as before
+    await this.addToOfflineQueue(operation, recordId, data);
+    
+    // Register background sync for this operation
+    await this.registerBackgroundSync(operation, recordId);
+  }
 }
 
 export type SyncStatus = typeof SyncService.syncStatus[keyof typeof SyncService.syncStatus];

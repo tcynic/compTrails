@@ -5,7 +5,7 @@ const withBundleAnalyzer = require('@next/bundle-analyzer')({
   enabled: process.env.ANALYZE === 'true',
 });
 
-// PWA plugin setup
+// PWA plugin setup with Background Sync support
 const withPWA = require('next-pwa')({
   dest: 'public',
   disable: process.env.NODE_ENV === 'development',
@@ -13,6 +13,11 @@ const withPWA = require('next-pwa')({
   skipWaiting: true,
   scope: '/',
   sw: 'sw.js',
+  
+  // Import custom service worker for Background Sync
+  additionalManifestEntries: [
+    { url: '/sw-custom.js', revision: null },
+  ],
   
   // Exclude problematic build files that cause 404 errors
   buildExcludes: [
@@ -87,6 +92,34 @@ const withPWA = require('next-pwa')({
         },
         cacheableResponse: {
           statuses: [0, 200, 202], // Include 202 Accepted for async processing
+        },
+        backgroundSync: {
+          name: 'emergency-sync-queue',
+          options: {
+            maxRetentionTime: 24 * 60, // 24 hours in minutes
+          },
+        },
+      },
+    },
+    // Background sync API endpoints - NetworkFirst with background sync fallback
+    {
+      urlPattern: /^https?.*\/api\/(sync|convex).*/,
+      handler: 'NetworkFirst',
+      options: {
+        cacheName: 'background-sync-cache',
+        networkTimeoutSeconds: 15,
+        expiration: {
+          maxEntries: 10,
+          maxAgeSeconds: 300, // 5 minutes
+        },
+        backgroundSync: {
+          name: 'api-sync-queue',
+          options: {
+            maxRetentionTime: 24 * 60, // 24 hours in minutes
+          },
+        },
+        cacheableResponse: {
+          statuses: [0, 200, 201, 202],
         },
       },
     },

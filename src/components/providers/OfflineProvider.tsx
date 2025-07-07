@@ -15,6 +15,8 @@ interface OfflineContextType {
   clearCaches: () => Promise<void>;
   triggerEmergencySync: () => void;
   isPageVisible: boolean;
+  backgroundSyncSupported: boolean;
+  registerBackgroundSync: (operation: string, recordId: string) => Promise<boolean>;
 }
 
 const OfflineContext = createContext<OfflineContextType | null>(null);
@@ -28,6 +30,7 @@ export function OfflineProvider({ children }: OfflineProviderProps) {
   const [serviceWorkerStatus, setServiceWorkerStatus] = useState<ServiceWorkerStatus>('installing');
   const [syncStatus, setSyncStatus] = useState<SyncStatus>('idle');
   const [isPageVisible, setIsPageVisible] = useState(true);
+  const [backgroundSyncSupported, setBackgroundSyncSupported] = useState(false);
   const convex = useConvex();
 
   useEffect(() => {
@@ -99,6 +102,13 @@ export function OfflineProvider({ children }: OfflineProviderProps) {
     // Setup sync status listener
     const unsubscribeSync = SyncService.addSyncListener(setSyncStatus);
 
+    // Check background sync support
+    const bgSyncSupported = SyncService.isBackgroundSyncSupported();
+    setBackgroundSyncSupported(bgSyncSupported);
+
+    // Setup background sync listener
+    const unsubscribeBackgroundSync = SyncService.setupBackgroundSyncListener();
+
     // Initialize PageLifecycleService
     const config = getSyncConfig();
     PageLifecycleService.initialize({
@@ -149,6 +159,9 @@ export function OfflineProvider({ children }: OfflineProviderProps) {
       unsubscribeVisibilityChange();
       PageLifecycleService.cleanup();
       
+      // Clean up background sync listener
+      unsubscribeBackgroundSync();
+      
       unsubscribeSync();
       SyncService.cleanup();
     };
@@ -160,6 +173,10 @@ export function OfflineProvider({ children }: OfflineProviderProps) {
 
   const triggerEmergencySync = () => {
     SyncService.triggerEmergencySync();
+  };
+
+  const registerBackgroundSync = async (operation: string, recordId: string): Promise<boolean> => {
+    return await SyncService.registerBackgroundSync(operation, recordId);
   };
 
   const clearCaches = async () => {
@@ -178,6 +195,8 @@ export function OfflineProvider({ children }: OfflineProviderProps) {
     clearCaches,
     triggerEmergencySync,
     isPageVisible,
+    backgroundSyncSupported,
+    registerBackgroundSync,
   };
 
   return (

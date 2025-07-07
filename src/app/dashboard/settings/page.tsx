@@ -17,11 +17,15 @@ import {
   EyeOff,
   Lock,
   Smartphone,
-  Globe
+  Globe,
+  RefreshCw,
+  Activity
 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useOffline } from '@/components/providers/OfflineProvider';
 import { useAnalytics } from '@/hooks/useAnalytics';
+import { SyncService } from '@/services/syncService';
+import { getSyncConfig, updateSyncConfig } from '@/lib/config/syncConfig';
 
 export default function SettingsPage() {
   const { user } = useAuth();
@@ -29,6 +33,15 @@ export default function SettingsPage() {
   const { trackPageView, trackFeatureUsage, setEnabled, getEnabled } = useAnalytics();
   const [showApiKeys, setShowApiKeys] = useState(false);
   const [analyticsEnabled, setAnalyticsEnabled] = useState(true);
+  
+  // Sync preferences state
+  const [syncPreferences, setSyncPreferences] = useState({
+    emergencySync: true,
+    backgroundSync: true,
+    visibilityChangeSync: true,
+    beforeUnloadSync: true,
+  });
+  const [backgroundSyncSupported, setBackgroundSyncSupported] = useState(false);
 
   useEffect(() => {
     // Track settings page view
@@ -36,6 +49,19 @@ export default function SettingsPage() {
     
     // Get current analytics state
     setAnalyticsEnabled(getEnabled());
+    
+    // Load sync preferences
+    const config = getSyncConfig();
+    setSyncPreferences({
+      emergencySync: config.emergency.enabled,
+      backgroundSync: SyncService.isBackgroundSyncSupported(),
+      visibilityChangeSync: config.emergency.visibilityChangeSync,
+      beforeUnloadSync: config.emergency.beforeUnloadSync,
+    });
+    
+    // Check background sync support
+    setBackgroundSyncSupported(SyncService.isBackgroundSyncSupported());
+    
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []); // Empty dependency array - only run once on mount to prevent rate limiting
 
@@ -47,6 +73,29 @@ export default function SettingsPage() {
     trackFeatureUsage({
       feature_name: 'analytics_settings',
       action: enabled ? 'opt_in' : 'opt_out',
+    });
+  };
+
+  const handleSyncPreferenceChange = (preference: keyof typeof syncPreferences, enabled: boolean) => {
+    const newPreferences = { ...syncPreferences, [preference]: enabled };
+    setSyncPreferences(newPreferences);
+    
+    // Update sync configuration
+    const currentConfig = getSyncConfig();
+    updateSyncConfig({
+      emergency: {
+        ...currentConfig.emergency,
+        enabled: preference === 'emergencySync' ? enabled : currentConfig.emergency.enabled,
+        visibilityChangeSync: preference === 'visibilityChangeSync' ? enabled : currentConfig.emergency.visibilityChangeSync,
+        beforeUnloadSync: preference === 'beforeUnloadSync' ? enabled : currentConfig.emergency.beforeUnloadSync,
+      },
+    });
+    
+    // Track the preference change
+    trackFeatureUsage({
+      feature_name: 'sync_preferences',
+      action: enabled ? 'enable' : 'disable',
+      section: preference,
     });
   };
 
@@ -201,6 +250,95 @@ export default function SettingsPage() {
                 <Button size="sm" variant="outline">
                   Clear Cache
                 </Button>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Sync Preferences */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <RefreshCw className="h-5 w-5" />
+                Sync Preferences
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium">Emergency Sync</p>
+                  <p className="text-xs text-gray-500">Enable emergency sync on tab closure</p>
+                </div>
+                <label className="relative inline-flex items-center cursor-pointer">
+                  <input 
+                    type="checkbox" 
+                    className="sr-only peer" 
+                    checked={syncPreferences.emergencySync}
+                    onChange={(e) => handleSyncPreferenceChange('emergencySync', e.target.checked)}
+                  />
+                  <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                </label>
+              </div>
+
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium">Background Sync</p>
+                  <p className="text-xs text-gray-500">
+                    Sync data when app is in background
+                    {!backgroundSyncSupported && " (Not supported in this browser)"}
+                  </p>
+                </div>
+                <div className="flex items-center gap-2">
+                  {backgroundSyncSupported ? (
+                    <Badge variant="secondary" className="text-xs">
+                      <Activity className="h-3 w-3 mr-1" />
+                      Supported
+                    </Badge>
+                  ) : (
+                    <Badge variant="outline" className="text-xs">
+                      Not Available
+                    </Badge>
+                  )}
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium">Visibility Change Sync</p>
+                  <p className="text-xs text-gray-500">Sync when switching tabs or minimizing</p>
+                </div>
+                <label className="relative inline-flex items-center cursor-pointer">
+                  <input 
+                    type="checkbox" 
+                    className="sr-only peer" 
+                    checked={syncPreferences.visibilityChangeSync}
+                    onChange={(e) => handleSyncPreferenceChange('visibilityChangeSync', e.target.checked)}
+                  />
+                  <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                </label>
+              </div>
+
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium">Page Unload Sync</p>
+                  <p className="text-xs text-gray-500">Emergency sync when closing browser</p>
+                </div>
+                <label className="relative inline-flex items-center cursor-pointer">
+                  <input 
+                    type="checkbox" 
+                    className="sr-only peer" 
+                    checked={syncPreferences.beforeUnloadSync}
+                    onChange={(e) => handleSyncPreferenceChange('beforeUnloadSync', e.target.checked)}
+                  />
+                  <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                </label>
+              </div>
+
+              <div className="p-3 bg-blue-50 rounded-lg">
+                <p className="text-xs text-blue-700">
+                  <Activity className="h-3 w-3 inline mr-1" />
+                  Emergency sync helps prevent data loss by syncing changes when you close tabs or the browser.
+                  Background sync works even when the app is closed (where supported).
+                </p>
               </div>
             </CardContent>
           </Card>
