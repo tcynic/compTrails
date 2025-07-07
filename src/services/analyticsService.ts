@@ -98,18 +98,34 @@ export class AnalyticsService {
     }
 
     try {
-      // Check if PostHog is initialized before tracking
-      if (!posthog || !posthog.__loaded || typeof posthog.capture !== 'function') {
+      // Multiple layers of PostHog initialization checks
+      if (!posthog) {
+        console.warn('PostHog instance not available, skipping event:', eventName);
+        return;
+      }
+
+      if (typeof posthog.capture !== 'function') {
+        console.warn('PostHog capture method not available, skipping event:', eventName);
+        return;
+      }
+
+      // Check if PostHog is properly loaded
+      if (!posthog.__loaded) {
         console.warn('PostHog not yet loaded, skipping event:', eventName);
         return;
       }
 
-      posthog.capture(eventName, {
-        ...properties,
-        timestamp: Date.now(),
-      });
+      // Additional safety check for the capture function
+      if (posthog.capture.toString().includes('[native code]') || posthog.capture.length >= 0) {
+        posthog.capture(eventName, {
+          ...properties,
+          timestamp: Date.now(),
+        });
+      } else {
+        console.warn('PostHog capture function appears invalid, skipping event:', eventName);
+      }
     } catch (error) {
-      console.warn('Analytics tracking failed:', error);
+      console.warn('Analytics tracking failed for event:', eventName, 'Error:', error);
     }
   }
 
@@ -123,7 +139,17 @@ export class AnalyticsService {
 
     try {
       // Check if PostHog is initialized before identifying
-      if (!posthog || !posthog.__loaded || typeof posthog.identify !== 'function') {
+      if (!posthog) {
+        console.warn('PostHog instance not available, skipping user identification');
+        return;
+      }
+
+      if (typeof posthog.identify !== 'function') {
+        console.warn('PostHog identify method not available, skipping user identification');
+        return;
+      }
+
+      if (!posthog.__loaded) {
         console.warn('PostHog not yet loaded, skipping user identification');
         return;
       }
@@ -134,7 +160,7 @@ export class AnalyticsService {
         first_seen: new Date().toISOString(),
       });
     } catch (error) {
-      console.warn('User identification failed:', error);
+      console.warn('User identification failed for userId:', userId, 'Error:', error);
     }
   }
 
@@ -269,7 +295,17 @@ export class AnalyticsService {
 
     try {
       // Check if PostHog is initialized before resetting
-      if (!posthog || !posthog.__loaded || typeof posthog.reset !== 'function') {
+      if (!posthog) {
+        console.warn('PostHog instance not available, skipping reset');
+        return;
+      }
+
+      if (typeof posthog.reset !== 'function') {
+        console.warn('PostHog reset method not available, skipping reset');
+        return;
+      }
+
+      if (!posthog.__loaded) {
         console.warn('PostHog not yet loaded, skipping reset');
         return;
       }
