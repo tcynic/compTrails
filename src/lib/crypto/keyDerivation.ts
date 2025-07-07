@@ -13,6 +13,7 @@ export class KeyDerivation {
 
   /**
    * Load argon2-browser dynamically (client-side only)
+   * Falls back to PBKDF2 if Argon2 is not available
    */
   private static async loadArgon2() {
     if (typeof window === 'undefined') {
@@ -24,103 +25,78 @@ export class KeyDerivation {
 
     // Check if browser supports WebAssembly
     if (!WebAssembly) {
-      console.warn('WebAssembly not supported, falling back to enhanced PBKDF2');
+      console.warn('WebAssembly not supported, using enhanced PBKDF2');
+      return this.getPBKDF2Fallback();
+    }
+
+    // For development/debugging: force PBKDF2 to avoid WASM issues temporarily
+    if (process.env.NODE_ENV === 'development' && 
+        typeof window !== 'undefined' && 
+        localStorage.getItem('forcePBKDF2') === 'true') {
+      console.info('Forcing PBKDF2 fallback (development mode)');
       return this.getPBKDF2Fallback();
     }
 
     try {
-      // Configure the WASM path to point to the public directory
-      // This prevents the library from trying to use the Node.js require path
-      // which causes base64 decoding errors
-      const global = globalThis as any;
+      // Test if we can load the argon2-browser module
+      console.log('Attempting to load argon2-browser module...');
+      const argon2Module = await import('argon2-browser');
       
-      // Set the WASM path configuration BEFORE importing the module
-      global.argon2WasmPath = '/argon2.wasm';
-      global.argon2SimdWasmPath = '/argon2-simd.wasm';
-      
-      // Force argon2-browser to use browser environment detection
-      // This prevents it from detecting 'require' and using Node.js code paths
-      global.process = global.process || {};
-      global.process.browser = true;
-      global.process.env = global.process.env || {};
-      global.process.env.NODE_ENV = 'development';
-      
-      // Override the WASM binary loader to force using fetch instead of require
-      // This prevents the base64 decoding issue entirely
-      global.loadArgon2WasmBinary = async () => {
-        console.log('Loading WASM via custom fetch handler');
-        try {
-          const response = await fetch('/argon2.wasm');
-          if (!response.ok) {
-            throw new Error(`Failed to load WASM: ${response.status} ${response.statusText}`);
-          }
-          const arrayBuffer = await response.arrayBuffer();
-          console.log('WASM file loaded successfully via fetch');
-          return new Uint8Array(arrayBuffer);
-        } catch (error) {
-          console.error('Custom WASM loader failed:', error);
-          throw error;
-        }
-      };
-      
-      // Override the environment detection to force browser mode
-      global.loadArgon2WasmModule = async () => {
-        console.log('Loading Argon2 WASM module in browser mode');
-        return await WebAssembly.instantiate(await global.loadArgon2WasmBinary());
-      };
-      
-      // Import argon2-browser with proper destructuring
-      const { hash } = await import('argon2-browser');
-      
-      if (typeof hash !== 'function') {
+      if (!argon2Module.hash || typeof argon2Module.hash !== 'function') {
         throw new Error('Argon2 hash function not available');
       }
       
-      console.log('Successfully loaded Argon2 - using secure key derivation');
-      
-      // Return a wrapper that handles the argon2-browser API
-      return async (options: HashOptions) => {
-        try {
-          console.log('Calling Argon2 hash with options:', {
-            type: options.type,
-            mem: options.mem,
-            time: options.time,
-            parallelism: options.parallelism,
-            hashLen: options.hashLen
-          });
-          
-          const result = await hash(options);
-          console.log('Argon2 hash completed successfully');
-          return result;
-        } catch (argon2Error) {
-          console.error('Argon2 hashing failed:', argon2Error);
-          
-          // Check if it's a base64 decoding error specifically
-          if (argon2Error instanceof Error && argon2Error.message.includes('atob')) {
-            console.error('Base64 decoding error detected - WASM loading issue');
-            console.error('This usually indicates that the WASM file path is incorrect or the file is corrupted');
-          } else if (argon2Error instanceof Error && argon2Error.message.includes('Failed to load WASM')) {
-            console.error('WASM loading failed - check that /argon2.wasm is accessible');
-          }
-          
-          console.warn('Falling back to PBKDF2 due to Argon2 error');
-          // Fallback to PBKDF2 if Argon2 hash fails at runtime
-          const fallback = this.getPBKDF2Fallback();
-          return await fallback(options);
+      // Test if Argon2 actually works with a small test
+      try {
+        console.log('Testing Argon2 functionality...');
+        const testResult = await argon2Module.hash({
+          pass: 'test',
+          salt: new Uint8Array(16),
+          type: 2, // Argon2id
+          mem: 1024, // Small memory for test
+          time: 1,
+          parallelism: 1,
+          hashLen: 32,
+        });
+        
+        if (!testResult || !testResult.hash) {
+          throw new Error('Argon2 test failed - no hash returned');
         }
-      };
-    } catch (importError) {
-      console.error('Failed to load Argon2 module:', importError);
-      
-      // Check if it's a base64 decoding error during import
-      if (importError instanceof Error && importError.message.includes('atob')) {
-        console.error('Base64 decoding error during Argon2 import - WASM loading issue');
-        console.error('This usually indicates that the WASM file path is incorrect or the file is corrupted');
-      } else if (importError instanceof Error && importError.message.includes('Failed to load WASM')) {
-        console.error('WASM loading failed during import - check that /argon2.wasm is accessible');
+        
+        console.log('Argon2 test successful - using secure key derivation');
+        
+        // Return working Argon2 wrapper
+        return async (options: HashOptions) => {
+          try {
+            return await argon2Module.hash(options);
+          } catch (argon2Error) {
+            console.error('Argon2 hashing failed:', argon2Error);
+            console.warn('Falling back to PBKDF2 for this operation');
+            const fallback = this.getPBKDF2Fallback();
+            return await fallback(options);
+          }
+        };
+        
+      } catch (testError) {
+        console.warn('Argon2 test failed:', testError);
+        throw new Error(`Argon2 functionality test failed: ${testError instanceof Error ? testError.message : 'Unknown error'}`);
       }
       
-      console.warn('Falling back to enhanced PBKDF2');
+    } catch (loadError) {
+      console.error('Failed to load or test Argon2:', loadError);
+      
+      // Provide detailed error information for debugging
+      if (loadError instanceof Error) {
+        if (loadError.message.includes('WebAssembly.instantiate')) {
+          console.error('WebAssembly instantiation failed - this is a known issue with argon2-browser WASM loading');
+          console.info('The application will use PBKDF2 as a secure fallback');
+        } else if (loadError.message.includes('Imports argument must be present')) {
+          console.error('WASM imports argument missing - WASM module loading issue');
+          console.info('The application will use PBKDF2 as a secure fallback');
+        }
+      }
+      
+      console.info('Using enhanced PBKDF2 for key derivation (secure fallback)');
       return this.getPBKDF2Fallback();
     }
   }
@@ -308,4 +284,105 @@ export class KeyDerivation {
 
     return Math.round(baseTime * memoryFactor * iterationFactor);
   }
+
+  /**
+   * Debug utility to test crypto capabilities and provide diagnostics
+   * This can be called from the browser console to troubleshoot issues
+   */
+  static async debugCryptoCapabilities(): Promise<{
+    webAssembly: boolean;
+    argon2Available: boolean;
+    pbkdf2Available: boolean;
+    testResults: {
+      argon2?: { success: boolean; error?: string; duration?: number };
+      pbkdf2?: { success: boolean; error?: string; duration?: number };
+    };
+  }> {
+    const result = {
+      webAssembly: typeof WebAssembly !== 'undefined',
+      argon2Available: false,
+      pbkdf2Available: typeof crypto !== 'undefined' && typeof crypto.subtle !== 'undefined',
+      testResults: {} as any,
+    };
+
+    console.log('🔍 Debugging crypto capabilities...');
+
+    // Test PBKDF2
+    if (result.pbkdf2Available) {
+      try {
+        const start = performance.now();
+        const fallback = this.getPBKDF2Fallback();
+        await fallback({
+          pass: 'test',
+          salt: new Uint8Array(16),
+          type: 2,
+          mem: 1024,
+          time: 1,
+          parallelism: 1,
+          hashLen: 32,
+        });
+        const duration = performance.now() - start;
+        result.testResults.pbkdf2 = { success: true, duration };
+        console.log('✅ PBKDF2 test successful');
+      } catch (error) {
+        result.testResults.pbkdf2 = { 
+          success: false, 
+          error: error instanceof Error ? error.message : 'Unknown error' 
+        };
+        console.log('❌ PBKDF2 test failed:', error);
+      }
+    }
+
+    // Test Argon2
+    if (result.webAssembly) {
+      try {
+        const start = performance.now();
+        const argon2 = await this.loadArgon2();
+        await argon2({
+          pass: 'test',
+          salt: new Uint8Array(16),
+          type: 2,
+          mem: 1024,
+          time: 1,
+          parallelism: 1,
+          hashLen: 32,
+        });
+        const duration = performance.now() - start;
+        result.argon2Available = true;
+        result.testResults.argon2 = { success: true, duration };
+        console.log('✅ Argon2 test successful');
+      } catch (error) {
+        result.testResults.argon2 = { 
+          success: false, 
+          error: error instanceof Error ? error.message : 'Unknown error' 
+        };
+        console.log('❌ Argon2 test failed:', error);
+      }
+    }
+
+    console.log('🔍 Crypto capabilities debug results:', result);
+    return result;
+  }
+
+  /**
+   * Force PBKDF2 fallback for development/debugging
+   * Call this from the browser console: KeyDerivation.forcePBKDF2Fallback(true)
+   */
+  static forcePBKDF2Fallback(force: boolean = true): void {
+    if (typeof window !== 'undefined') {
+      if (force) {
+        localStorage.setItem('forcePBKDF2', 'true');
+        console.log('🔧 Forced PBKDF2 fallback enabled. Reload the page to take effect.');
+      } else {
+        localStorage.removeItem('forcePBKDF2');
+        console.log('🔧 Forced PBKDF2 fallback disabled. Reload the page to take effect.');
+      }
+    }
+  }
+}
+
+// Make KeyDerivation available globally for debugging in development
+if (typeof window !== 'undefined' && process.env.NODE_ENV === 'development') {
+  (window as any).KeyDerivation = KeyDerivation;
+  console.log('🔧 KeyDerivation class available globally for debugging. Try: KeyDerivation.debugCryptoCapabilities()');
 }
