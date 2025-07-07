@@ -30,6 +30,9 @@ export class SyncService {
     this.setupOnlineDetection();
     this.startPeriodicSync();
     
+    // Clear any invalid sync items from previous sessions
+    this.clearInvalidSyncItems();
+    
     // Sync immediately if online
     if (this.isOnline) {
       this.triggerSync();
@@ -159,6 +162,7 @@ export class SyncService {
           if (!data) {
             throw new Error('Missing data for create operation');
           }
+          console.log('Offline queue create operation - data:', JSON.stringify(data, null, 2));
           await this.convexClient.mutation(api.compensationRecords.createCompensationRecord, data as unknown as CreateCompensationSyncData);
           break;
         
@@ -247,6 +251,7 @@ export class SyncService {
           if (!item.data) {
             throw new Error('Missing data for create operation');
           }
+          console.log('Sync create operation - data:', JSON.stringify(item.data, null, 2));
           await this.convexClient.mutation(api.compensationRecords.createCompensationRecord, item.data as unknown as CreateCompensationSyncData);
           break;
         
@@ -400,6 +405,41 @@ export class SyncService {
     if (!this.isOnline) return this.syncStatus.offline;
     if (this.syncInProgress) return this.syncStatus.syncing;
     return this.syncStatus.idle;
+  }
+
+  /**
+   * Clear invalid sync items with empty data
+   */
+  static async clearInvalidSyncItems(): Promise<void> {
+    try {
+      // Clear invalid pending sync items
+      const pendingItems = await db.pendingSync.toArray();
+      const invalidItems = pendingItems.filter(item => 
+        item.operation === 'create' && (!item.data || Object.keys(item.data).length === 0)
+      );
+      
+      console.log(`Found ${invalidItems.length} invalid pending sync items, clearing...`);
+      for (const item of invalidItems) {
+        await db.pendingSync.delete(item.id!);
+      }
+
+      // Clear invalid offline queue items
+      const queueItems = await db.offlineQueue.toArray();
+      const invalidQueueItems = queueItems.filter(item => {
+        if (item.data && item.data.operation === 'create') {
+          const data = item.data.data;
+          return !data || Object.keys(data).length === 0;
+        }
+        return false;
+      });
+      
+      console.log(`Found ${invalidQueueItems.length} invalid offline queue items, clearing...`);
+      for (const item of invalidQueueItems) {
+        await db.offlineQueue.delete(item.id!);
+      }
+    } catch (error) {
+      console.error('Error clearing invalid sync items:', error);
+    }
   }
 }
 

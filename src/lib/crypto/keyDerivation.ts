@@ -36,9 +36,10 @@ export class KeyDerivation {
       // Return a wrapper that handles the argon2-browser API
       return async (options: Record<string, any>) => {
         try {
-          // Call the hash function from argon2-browser
-          // Cast to any to handle external module type issues
-          const result = await (argon2Module as any).hash(options);
+          // Get the hash function from the argon2-browser module
+          // The module exports an object with a hash property
+          const argon2 = argon2Module.default || argon2Module;
+          const result = await (argon2 as any).hash(options);
           return result;
         } catch (argon2Error) {
           console.warn('Argon2 hashing failed, falling back to PBKDF2:', argon2Error);
