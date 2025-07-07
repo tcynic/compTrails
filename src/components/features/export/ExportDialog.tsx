@@ -283,7 +283,7 @@ export function ExportDialog({ isOpen, onClose, preselectedType = 'all' }: Expor
                     <Input
                       type="date"
                       value={customStartDate}
-                      onChange={(e) => setCustomStartDate(e.target.value)}
+                      onChange={(e) => setCustomStartDate(e.currentTarget!.value)}
                     />
                   </FormControl>
                 </FormItem>
@@ -293,7 +293,7 @@ export function ExportDialog({ isOpen, onClose, preselectedType = 'all' }: Expor
                     <Input
                       type="date"
                       value={customEndDate}
-                      onChange={(e) => setCustomEndDate(e.target.value)}
+                      onChange={(e) => setCustomEndDate(e.currentTarget!.value)}
                     />
                   </FormControl>
                 </FormItem>

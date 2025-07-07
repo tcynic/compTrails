@@ -1,12 +1,16 @@
 import { db } from '@/lib/db/database';
 import { LocalStorageService } from './localStorageService';
 import type { PendingSyncItem, OfflineQueueItem } from '@/lib/db/types';
+import { api } from '../../convex/_generated/api';
+import { ConvexReactClient } from 'convex/react';
+import { Id } from '../../convex/_generated/dataModel';
 
 export class SyncService {
   private static isOnline = true;
   private static syncInProgress = false;
   private static syncInterval: NodeJS.Timeout | null = null;
   private static listeners: Array<(status: SyncStatus) => void> = [];
+  private static convexClient: ConvexReactClient | null = null;
 
   // Sync status interface
   static readonly syncStatus = {
@@ -19,7 +23,10 @@ export class SyncService {
   /**
    * Initialize the sync service
    */
-  static initialize(): void {
+  static initialize(convexClient?: ConvexReactClient): void {
+    if (convexClient) {
+      this.convexClient = convexClient;
+    }
     this.setupOnlineDetection();
     this.startPeriodicSync();
     
@@ -27,6 +34,13 @@ export class SyncService {
     if (this.isOnline) {
       this.triggerSync();
     }
+  }
+
+  /**
+   * Set the Convex client for the sync service
+   */
+  static setConvexClient(client: ConvexReactClient): void {
+    this.convexClient = client;
   }
 
   /**
@@ -131,17 +145,50 @@ export class SyncService {
    * Execute an offline queue item
    */
   private static async executeOfflineQueueItem(item: OfflineQueueItem): Promise<void> {
-    const response = await fetch(item.url, {
-      method: item.method,
-      headers: {
-        'Content-Type': 'application/json',
-        ...item.headers,
-      },
-      body: item.data ? JSON.stringify(item.data) : undefined,
-    });
+    if (!this.convexClient) {
+      throw new Error('Convex client not initialized');
+    }
 
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    // Handle both old format (direct HTTP) and new format (Convex operations)
+    if (item.data && item.data.operation) {
+      // New format: Convex operations
+      const { operation, recordId, data } = item.data;
+      
+      switch (operation) {
+        case 'create':
+          await this.convexClient.mutation(api.compensationRecords.createCompensationRecord, data as any);
+          break;
+        
+        case 'update':
+          await this.convexClient.mutation(api.compensationRecords.updateCompensationRecord, {
+            id: recordId as Id<"compensationRecords">,
+            ...(data as any),
+          });
+          break;
+        
+        case 'delete':
+          await this.convexClient.mutation(api.compensationRecords.deleteCompensationRecord, {
+            id: recordId as Id<"compensationRecords">,
+          });
+          break;
+        
+        default:
+          throw new Error(`Unknown offline operation: ${operation}`);
+      }
+    } else {
+      // Old format: Fall back to HTTP (for backward compatibility)
+      const response = await fetch(item.url, {
+        method: item.method,
+        headers: {
+          'Content-Type': 'application/json',
+          ...item.headers,
+        },
+        body: item.data ? JSON.stringify(item.data) : undefined,
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
     }
   }
 
@@ -177,62 +224,50 @@ export class SyncService {
    * Execute a sync item
    */
   private static async executeSyncItem(item: PendingSyncItem): Promise<void> {
-    // This would normally make API calls to Convex
-    // For now, we'll simulate the sync operation
-    
-    const baseUrl = process.env.NEXT_PUBLIC_CONVEX_URL || 'http://localhost:3000';
-    let url: string;
-    let method: string;
-    let data: any = undefined;
-
-    switch (item.operation) {
-      case 'create':
-        url = `${baseUrl}/api/compensation`;
-        method = 'POST';
-        data = item.data;
-        break;
-      
-      case 'update':
-        url = `${baseUrl}/api/compensation/${item.recordId}`;
-        method = 'PUT';
-        data = item.data;
-        break;
-      
-      case 'delete':
-        url = `${baseUrl}/api/compensation/${item.recordId}`;
-        method = 'DELETE';
-        break;
-      
-      default:
-        throw new Error(`Unknown sync operation: ${item.operation}`);
+    if (!this.convexClient) {
+      throw new Error('Convex client not initialized');
     }
 
     // Add to offline queue if we're offline
     if (!this.isOnline) {
-      await this.addToOfflineQueue(method as any, url, data);
+      await this.addToOfflineQueue(item.operation, item.recordId.toString(), item.data);
       return;
     }
 
-    // Execute the sync operation
-    const response = await fetch(url, {
-      method,
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${this.getAuthToken()}`,
-      },
-      body: data ? JSON.stringify(data) : undefined,
-    });
+    try {
+      // Execute the sync operation using Convex mutations
+      switch (item.operation) {
+        case 'create':
+          await this.convexClient.mutation(api.compensationRecords.createCompensationRecord, item.data as any);
+          break;
+        
+        case 'update':
+          await this.convexClient.mutation(api.compensationRecords.updateCompensationRecord, {
+            id: item.recordId.toString() as Id<"compensationRecords">,
+            ...(item.data as any),
+          });
+          break;
+        
+        case 'delete':
+          await this.convexClient.mutation(api.compensationRecords.deleteCompensationRecord, {
+            id: item.recordId.toString() as Id<"compensationRecords">,
+          });
+          break;
+        
+        default:
+          throw new Error(`Unknown sync operation: ${item.operation}`);
+      }
 
-    if (!response.ok) {
-      throw new Error(`Sync failed: HTTP ${response.status}`);
-    }
-
-    // Update local record sync status
-    if (item.tableName === 'compensationRecords') {
-      await db.compensationRecords.update(item.recordId, {
-        syncStatus: 'synced',
-        lastSyncAt: Date.now(),
-      });
+      // Update local record sync status
+      if (item.tableName === 'compensationRecords') {
+        await db.compensationRecords.update(item.recordId, {
+          syncStatus: 'synced',
+          lastSyncAt: Date.now(),
+        });
+      }
+    } catch (error) {
+      console.error('Convex sync error:', error);
+      throw error;
     }
   }
 
@@ -240,16 +275,18 @@ export class SyncService {
    * Add an item to the offline queue
    */
   static async addToOfflineQueue(
-    method: 'GET' | 'POST' | 'PUT' | 'DELETE',
-    url: string,
-    data?: any,
-    headers?: Record<string, string>
+    operation: 'create' | 'update' | 'delete',
+    recordId: string,
+    data?: any
   ): Promise<void> {
     const queueItem: Omit<OfflineQueueItem, 'id'> = {
-      method,
-      url,
-      data,
-      headers,
+      method: 'POST', // Not used anymore, but kept for compatibility
+      url: '', // Not used anymore, but kept for compatibility
+      data: {
+        operation,
+        recordId,
+        data,
+      },
       timestamp: Date.now(),
       attempts: 0,
       maxAttempts: 3,

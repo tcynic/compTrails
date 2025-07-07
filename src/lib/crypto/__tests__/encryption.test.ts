@@ -144,5 +144,5 @@ export const encryptionTests = {
 
 // Export for potential use in browser console
 if (typeof window !== 'undefined') {
-  (window as Record<string, unknown>).encryptionTests = encryptionTests;
+  (window as any).encryptionTests = encryptionTests;
 }

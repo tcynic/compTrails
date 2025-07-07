@@ -157,7 +157,7 @@ export function AddEquityForm({ isOpen, onClose, onSuccess }: AddEquityFormProps
                       type="number"
                       placeholder="1000"
                       {...field}
-                      onChange={(e) => field.onChange(Number(e.target.value))}
+                      onChange={(e) => field.onChange(Number(e.currentTarget!.value))}
                     />
                   </FormControl>
                   {fieldState.error && <FormMessage>{fieldState.error.message}</FormMessage>}
@@ -178,7 +178,7 @@ export function AddEquityForm({ isOpen, onClose, onSuccess }: AddEquityFormProps
                         step="0.01"
                         placeholder="10.00"
                         {...field}
-                        onChange={(e) => field.onChange(Number(e.target.value))}
+                        onChange={(e) => field.onChange(Number(e.currentTarget!.value))}
                       />
                     </FormControl>
                     {fieldState.error && <FormMessage>{fieldState.error.message}</FormMessage>}

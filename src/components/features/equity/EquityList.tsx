@@ -252,7 +252,7 @@ export function EquityList() {
           <Input
             placeholder="Search equity grants..."
             value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
+            onChange={(e) => setSearchTerm(e.currentTarget!.value)}
             className="pl-10"
           />
         </div>

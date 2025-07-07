@@ -138,7 +138,7 @@ export function AddSalaryForm({ isOpen, onClose, onSuccess }: AddSalaryFormProps
                       type="number"
                       placeholder="150000"
                       {...field}
-                      onChange={(e) => field.onChange(Number(e.target.value))}
+                      onChange={(e) => field.onChange(Number(e.currentTarget!.value))}
                     />
                   </FormControl>
                   {fieldState.error && <FormMessage>{fieldState.error.message}</FormMessage>}

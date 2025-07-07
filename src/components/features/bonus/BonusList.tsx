@@ -194,7 +194,7 @@ export function BonusList() {
           <Input
             placeholder="Search bonuses..."
             value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
+            onChange={(e) => setSearchTerm(e.currentTarget!.value)}
             className="pl-10"
           />
         </div>

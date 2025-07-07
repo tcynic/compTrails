@@ -98,7 +98,8 @@ export function DashboardOverview() {
     
     // Track dashboard view
     trackPageView('dashboard_overview');
-  }, [loadAllCompensationData, trackPageView]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loadAllCompensationData]); // trackPageView omitted to prevent rate limiting
 
   // Calculate current salary
   const currentSalary = useMemo(() => {

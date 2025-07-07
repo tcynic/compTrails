@@ -39,7 +39,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
     try {
       const response = await fetch('/api/auth/me');
       if (response.ok) {
-        const user = await response.json();
+        const user = await response.json() as User;
         setAuthState(() => ({
           user,
           loading: false,

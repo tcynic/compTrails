@@ -134,7 +134,7 @@ export function AddBonusForm({ isOpen, onClose, onSuccess }: AddBonusFormProps) 
                       type="number"
                       placeholder="10000"
                       {...field}
-                      onChange={(e) => field.onChange(Number(e.target.value))}
+                      onChange={(e: React.ChangeEvent<HTMLInputElement>) => field.onChange(Number(e.currentTarget!.value))}
                     />
                   </FormControl>
                   {fieldState.error && <FormMessage>{fieldState.error.message}</FormMessage>}

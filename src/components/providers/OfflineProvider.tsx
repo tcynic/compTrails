@@ -3,6 +3,7 @@
 import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
 import { type ServiceWorkerStatus } from '@/lib/db';
 import { SyncService, type SyncStatus } from '@/services/syncService';
+import { useConvex } from 'convex/react';
 
 interface OfflineContextType {
   isOnline: boolean;
@@ -22,6 +23,7 @@ export function OfflineProvider({ children }: OfflineProviderProps) {
   const [isOnline, setIsOnline] = useState(true);
   const [serviceWorkerStatus, setServiceWorkerStatus] = useState<ServiceWorkerStatus>('installing');
   const [syncStatus, setSyncStatus] = useState<SyncStatus>('idle');
+  const convex = useConvex();
 
   useEffect(() => {
     // Initialize online status
@@ -42,7 +44,7 @@ export function OfflineProvider({ children }: OfflineProviderProps) {
       // Initial status check with a delay to allow registration to start
       const checkServiceWorkerStatus = () => {
         navigator.serviceWorker.getRegistration()
-          .then((registration) => {
+          .then((registration: ServiceWorkerRegistration | undefined) => {
             if (registration) {
               if (registration.active) {
                 setServiceWorkerStatus('active');
@@ -87,7 +89,7 @@ export function OfflineProvider({ children }: OfflineProviderProps) {
     }
 
     // Initialize sync service
-    SyncService.initialize();
+    SyncService.initialize(convex);
 
     // Setup sync status listener
     const unsubscribeSync = SyncService.addSyncListener(setSyncStatus);
@@ -115,7 +117,7 @@ export function OfflineProvider({ children }: OfflineProviderProps) {
       unsubscribeSync();
       SyncService.cleanup();
     };
-  }, []);
+  }, [convex]);
 
   const triggerSync = async () => {
     await SyncService.forceSync();

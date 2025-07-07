@@ -118,7 +118,7 @@ export class CSVExporter {
     const finalFilename = filename || defaultFilename;
     
     // Create download link
-    const link = document.createElement('a');
+    const link = document.createElement('a') as HTMLAnchorElement;
     if (link.download !== undefined) {
       const url = URL.createObjectURL(blob);
       link.setAttribute('href', url);
