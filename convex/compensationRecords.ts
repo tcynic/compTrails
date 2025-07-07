@@ -11,11 +11,43 @@ export const createCompensationRecord = mutation({
       salt: v.string(),
     }),
     currency: v.string(),
+    localId: v.optional(v.string()), // Optional client-side identifier for deduplication
   },
   handler: async (ctx, args) => {
     const now = Date.now();
+    
+    // Check for potential duplicates within the last 10 minutes to prevent rapid duplicate creation
+    const tenMinutesAgo = now - (10 * 60 * 1000);
+    const recentRecords = await ctx.db
+      .query('compensationRecords')
+      .withIndex('by_user_and_date', (q) => 
+        q.eq('userId', args.userId).gte('createdAt', tenMinutesAgo)
+      )
+      .filter((q) => q.eq(q.field('type'), args.type))
+      .collect();
+
+    // Check for exact duplicates based on encrypted data
+    const existingRecord = recentRecords.find(record => 
+      record.encryptedData.data === args.encryptedData.data &&
+      record.encryptedData.iv === args.encryptedData.iv &&
+      record.encryptedData.salt === args.encryptedData.salt &&
+      record.currency === args.currency
+    );
+
+    if (existingRecord) {
+      console.log(`Duplicate record detected for user ${args.userId}, returning existing record ${existingRecord._id}`);
+      return existingRecord._id;
+    }
+
+    // If localId is provided, check for records with the same localId (client-side deduplication)
+    if (args.localId) {
+      // Note: We don't store localId in the database, but we can use it for deduplication during sync
+      // In a production system, you might want to add a localId field to track client-side IDs
+    }
+
+    const { localId, ...recordData } = args;
     return await ctx.db.insert('compensationRecords', {
-      ...args,
+      ...recordData,
       createdAt: now,
       updatedAt: now,
       syncStatus: 'synced',

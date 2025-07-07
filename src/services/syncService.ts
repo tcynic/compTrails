@@ -354,7 +354,12 @@ export class SyncService {
           }
           
           console.log(`[SyncService] Syncing create operation for ${createData.type} record`);
-          await this.convexClient.mutation(api.compensationRecords.createCompensationRecord, item.data as unknown as CreateCompensationSyncData);
+          // Pass the local record ID for deduplication
+          const syncData = {
+            ...(item.data as unknown as CreateCompensationSyncData),
+            localId: item.recordId.toString(),
+          };
+          await this.convexClient.mutation(api.compensationRecords.createCompensationRecord, syncData);
           break;
         
         case 'update':
@@ -399,6 +404,46 @@ export class SyncService {
     data?: any,
     priority: 'normal' | 'high' | 'emergency' = 'normal'
   ): Promise<void> {
+    // Check for existing pending items for the same record and operation to prevent duplicates
+    const existingItems = await db.offlineQueue
+      .where('status')
+      .equals('pending')
+      .filter(item => {
+        const itemData = item.data as any;
+        return itemData?.recordId === recordId && itemData?.operation === operation;
+      })
+      .toArray();
+
+    if (existingItems.length > 0) {
+      // If higher priority item, update the existing one
+      const existingItem = existingItems[0];
+      const existingData = existingItem.data as any;
+      
+      if (this.getPriorityValue(priority) > this.getPriorityValue(existingData?.priority || 'normal')) {
+        await db.offlineQueue.update(existingItem.id!, {
+          data: {
+            operation,
+            recordId,
+            data,
+            priority,
+            emergencySync: priority === 'emergency',
+          },
+          timestamp: Date.now(),
+          maxAttempts: priority === 'emergency' ? 1 : 3,
+        });
+        
+        logSyncEvent('info', `Updated offline queue item: ${operation} for ${recordId} (priority: ${priority})`);
+      } else {
+        logSyncEvent('info', `Skipped duplicate offline queue item: ${operation} for ${recordId} (priority: ${priority})`);
+      }
+      
+      // Still trigger emergency sync if this is an emergency item
+      if (priority === 'emergency') {
+        await this.triggerEmergencySync();
+      }
+      return;
+    }
+
     const queueItem: Omit<OfflineQueueItem, 'id'> = {
       method: 'POST', // Not used anymore, but kept for compatibility
       url: '', // Not used anymore, but kept for compatibility
@@ -422,6 +467,18 @@ export class SyncService {
     // Trigger immediate emergency sync if this is an emergency item
     if (priority === 'emergency') {
       await this.triggerEmergencySync();
+    }
+  }
+
+  /**
+   * Helper method to get numeric priority value for comparison
+   */
+  private static getPriorityValue(priority: string): number {
+    switch (priority) {
+      case 'emergency': return 3;
+      case 'high': return 2;
+      case 'normal': return 1;
+      default: return 0;
     }
   }
 

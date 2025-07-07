@@ -68,12 +68,30 @@ export class CompTrailsDatabase extends Dexie {
     });
 
     this.compensationRecords.hook('updating', (modifications, primKey, obj) => {
-      (modifications as Record<string, any>).updatedAt = Date.now();
-      if (!(modifications as Record<string, any>).version) {
-        (modifications as Record<string, any>).version = ((obj as Record<string, any>).version || 0) + 1;
+      const mods = modifications as Record<string, any>;
+      
+      // Only update timestamp if it's not a sync-related update
+      if (!mods.lastSyncAt && !mods.syncStatus) {
+        mods.updatedAt = Date.now();
       }
-      if ((modifications as Record<string, any>).syncStatus !== 'synced') {
-        (modifications as Record<string, any>).syncStatus = 'pending';
+      
+      // Only increment version if it's not a sync-related update and version isn't already being set
+      if (!mods.version && !mods.lastSyncAt && !mods.syncStatus) {
+        mods.version = ((obj as Record<string, any>).version || 0) + 1;
+      }
+      
+      // Only set syncStatus to pending if:
+      // 1. syncStatus is not already being explicitly set
+      // 2. This is not a sync-related update (lastSyncAt being set)
+      // 3. There are actual data changes (not just metadata updates)
+      if (!mods.hasOwnProperty('syncStatus') && !mods.lastSyncAt) {
+        // Check if there are meaningful data changes (not just metadata)
+        const metadataFields = ['lastSyncAt', 'syncStatus', 'updatedAt', 'version'];
+        const hasDataChanges = Object.keys(mods).some(key => !metadataFields.includes(key));
+        
+        if (hasDataChanges) {
+          mods.syncStatus = 'pending';
+        }
       }
     });
 

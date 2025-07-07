@@ -136,6 +136,30 @@ export class LocalStorageService {
     recordId: number,
     data?: any
   ): Promise<void> {
+    // Check for existing pending sync items for the same record and operation to prevent duplicates
+    const existingItems = await db.pendingSync
+      .where('status')
+      .equals('pending')
+      .filter(item => 
+        item.operation === operation && 
+        item.tableName === tableName && 
+        item.recordId === recordId
+      )
+      .toArray();
+
+    if (existingItems.length > 0) {
+      // Update the existing item with the latest data instead of creating a duplicate
+      const existingItem = existingItems[0];
+      await db.pendingSync.update(existingItem.id!, {
+        data: data,
+        updatedAt: Date.now(),
+        attempts: 0, // Reset attempts since we have new data
+      });
+      
+      console.log(`[LocalStorageService] Updated existing sync item: ${operation} for ${tableName}:${recordId}`);
+      return;
+    }
+
     // Validate data for create operations
     if (operation === 'create' && data) {
       const isValidCreateData = data.userId && data.type && data.encryptedData && data.currency;
@@ -164,6 +188,7 @@ export class LocalStorageService {
     };
 
     const syncItemId = await db.pendingSync.add(syncItem as PendingSyncItem);
+    console.log(`[LocalStorageService] Added new sync item: ${operation} for ${tableName}:${recordId}`);
     
     // Verify the item was stored correctly
     const storedItem = await db.pendingSync.get(syncItemId);

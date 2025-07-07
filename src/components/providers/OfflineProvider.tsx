@@ -129,7 +129,8 @@ export function OfflineProvider({ children }: OfflineProviderProps) {
       setIsPageVisible(!hidden);
       
       // Trigger sync when page becomes visible (user returns to tab)
-      if (!hidden && isOnline) {
+      // Check online status dynamically to avoid stale closure
+      if (!hidden && navigator.onLine) {
         SyncService.triggerSync();
       }
     });
@@ -165,7 +166,19 @@ export function OfflineProvider({ children }: OfflineProviderProps) {
       unsubscribeSync();
       SyncService.cleanup();
     };
-  }, [convex, isOnline]);
+  }, [convex]); // Remove isOnline dependency to prevent re-initialization
+
+  // Handle online status changes separately to prevent re-initialization
+  useEffect(() => {
+    if (isOnline) {
+      // Trigger sync when coming back online, but debounce to prevent multiple triggers
+      const timeoutId = setTimeout(() => {
+        SyncService.triggerSync();
+      }, 1000); // 1 second delay to debounce multiple online events
+      
+      return () => clearTimeout(timeoutId);
+    }
+  }, [isOnline]);
 
   const triggerSync = async () => {
     await SyncService.forceSync();
