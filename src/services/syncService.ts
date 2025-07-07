@@ -156,13 +156,19 @@ export class SyncService {
       
       switch (operation) {
         case 'create':
-          await this.convexClient.mutation(api.compensationRecords.createCompensationRecord, data as any);
+          if (!data) {
+            throw new Error('Missing data for create operation');
+          }
+          await this.convexClient.mutation(api.compensationRecords.createCompensationRecord, data);
           break;
         
         case 'update':
+          if (!data) {
+            throw new Error('Missing data for update operation');
+          }
           await this.convexClient.mutation(api.compensationRecords.updateCompensationRecord, {
             id: recordId as Id<"compensationRecords">,
-            ...(data as any),
+            ...data,
           });
           break;
         
@@ -238,13 +244,19 @@ export class SyncService {
       // Execute the sync operation using Convex mutations
       switch (item.operation) {
         case 'create':
-          await this.convexClient.mutation(api.compensationRecords.createCompensationRecord, item.data as any);
+          if (!item.data) {
+            throw new Error('Missing data for create operation');
+          }
+          await this.convexClient.mutation(api.compensationRecords.createCompensationRecord, item.data);
           break;
         
         case 'update':
+          if (!item.data) {
+            throw new Error('Missing data for update operation');
+          }
           await this.convexClient.mutation(api.compensationRecords.updateCompensationRecord, {
             id: item.recordId.toString() as Id<"compensationRecords">,
-            ...(item.data as any),
+            ...item.data,
           });
           break;
         

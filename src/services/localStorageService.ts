@@ -23,7 +23,17 @@ export class LocalStorageService {
       
       // Add to sync queue if not already synced
       if (record.syncStatus === 'pending') {
-        await this.addToSyncQueue('create', 'compensationRecords', id);
+        // Get the created record to include in sync data
+        const createdRecord = await db.compensationRecords.get(id);
+        if (createdRecord) {
+          const syncData = {
+            userId: createdRecord.userId,
+            type: createdRecord.type,
+            encryptedData: createdRecord.encryptedData,
+            currency: createdRecord.currency,
+          };
+          await this.addToSyncQueue('create', 'compensationRecords', id, syncData);
+        }
       }
       
       return id;
@@ -73,8 +83,16 @@ export class LocalStorageService {
         syncStatus: 'pending',
       });
       
-      // Add to sync queue
-      await this.addToSyncQueue('update', 'compensationRecords', id);
+      // Get the updated record to include in sync data
+      const updatedRecord = await db.compensationRecords.get(id);
+      if (updatedRecord) {
+        const syncData = {
+          encryptedData: updatedRecord.encryptedData,
+          currency: updatedRecord.currency,
+          version: updatedRecord.version,
+        };
+        await this.addToSyncQueue('update', 'compensationRecords', id, syncData);
+      }
     } catch (error) {
       throw new LocalStorageError(
         `Failed to update compensation record: ${error instanceof Error ? error.message : 'Unknown error'}`,
@@ -90,7 +108,7 @@ export class LocalStorageService {
     try {
       await db.compensationRecords.delete(id);
       
-      // Add to sync queue
+      // Add to sync queue (no data needed for delete operation)
       await this.addToSyncQueue('delete', 'compensationRecords', id);
     } catch (error) {
       throw new LocalStorageError(
