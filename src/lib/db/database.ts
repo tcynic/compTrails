@@ -30,6 +30,34 @@ export class CompTrailsDatabase extends Dexie {
       offlineQueue: '++id, method, url, status, timestamp, attempts',
     });
 
+    // Add a new version to improve data integrity
+    this.version(2).stores({
+      // Compensation records - the main data table
+      compensationRecords: '++id, userId, type, syncStatus, createdAt, updatedAt, lastSyncAt',
+      
+      // Pending sync operations - with better data handling
+      pendingSync: '++id, userId, operation, tableName, recordId, status, createdAt, lastAttemptAt, attempts',
+      
+      // User preferences and settings
+      userPreferences: '++id, userId, createdAt, updatedAt',
+      
+      // Offline queue for API calls when network is unavailable
+      offlineQueue: '++id, method, url, status, timestamp, attempts',
+    }).upgrade(tx => {
+      // Migration to ensure data integrity
+      console.log('[Database] Upgrading to version 2 - ensuring data integrity');
+      return tx.table('pendingSync').toCollection().modify((syncItem) => {
+        // Ensure attempts field exists
+        if (typeof syncItem.attempts !== 'number') {
+          syncItem.attempts = 0;
+        }
+        // Ensure data field is properly structured
+        if (syncItem.operation === 'create' && !syncItem.data) {
+          console.warn(`[Database] Found sync item ${syncItem.id} with missing data during upgrade`);
+        }
+      });
+    });
+
     // Add hooks for automatic timestamp management
     this.compensationRecords.hook('creating', (primKey, obj) => {
       const now = Date.now();

@@ -30,6 +30,9 @@ export class SyncService {
     this.setupOnlineDetection();
     this.startPeriodicSync();
     
+    // Start health check
+    this.startHealthCheck();
+    
     // Clear any invalid sync items from previous sessions
     this.clearInvalidSyncItems();
     
@@ -210,23 +213,81 @@ export class SyncService {
     const currentUserId = 'current-user'; // Placeholder
     const pendingItems = await LocalStorageService.getPendingSyncItems(currentUserId);
 
+    console.log(`[SyncService] Processing ${pendingItems.length} pending sync items`);
+
+    // Clean up invalid sync items first
+    await this.cleanupInvalidSyncItems();
+
     for (const item of pendingItems) {
+      // Re-fetch the item to ensure we have the latest data
+      const freshItem = await db.pendingSync.get(item.id!);
+      if (!freshItem) {
+        console.warn(`[SyncService] Sync item ${item.id} no longer exists`);
+        continue;
+      }
+      
+      console.log(`[SyncService] Processing sync item ${freshItem.id}: ${freshItem.operation}`);
+      
       try {
-        await this.executeSyncItem(item);
-        await LocalStorageService.markSyncCompleted(item.id!);
+        await this.executeSyncItem(freshItem);
+        await LocalStorageService.markSyncCompleted(freshItem.id!);
       } catch (error) {
-        const newAttempts = item.attempts + 1;
+        const newAttempts = freshItem.attempts + 1;
         const errorMessage = error instanceof Error ? error.message : 'Unknown error';
         
         if (newAttempts >= 3) {
-          await LocalStorageService.markSyncFailed(item.id!, errorMessage);
+          await LocalStorageService.markSyncFailed(freshItem.id!, errorMessage);
         } else {
-          await db.pendingSync.update(item.id!, {
+          await db.pendingSync.update(freshItem.id!, {
             attempts: newAttempts,
             lastAttemptAt: Date.now(),
           });
         }
       }
+    }
+  }
+
+  /**
+   * Clean up invalid sync items
+   */
+  private static async cleanupInvalidSyncItems(): Promise<void> {
+    try {
+      const allPendingItems = await db.pendingSync.where('status').equals('pending').toArray();
+      const invalidItems = allPendingItems.filter(item => {
+        if (item.operation === 'create' && !item.data) {
+          console.warn(`[SyncService] Found invalid sync item ${item.id} with no data`);
+          return true;
+        }
+        return false;
+      });
+
+      for (const invalidItem of invalidItems) {
+        // Check if the original record still exists and needs syncing
+        const originalRecord = await db.compensationRecords.get(invalidItem.recordId);
+        if (originalRecord && originalRecord.syncStatus === 'pending') {
+          console.log(`[SyncService] Attempting to repair sync item ${invalidItem.id}`);
+          
+          // Try to recreate the sync data
+          const repairData = {
+            userId: originalRecord.userId,
+            type: originalRecord.type,
+            encryptedData: {
+              data: originalRecord.encryptedData.encryptedData,
+              iv: originalRecord.encryptedData.iv,
+              salt: originalRecord.encryptedData.salt,
+            },
+            currency: originalRecord.currency,
+          };
+          
+          await db.pendingSync.update(invalidItem.id!, { data: repairData });
+          console.log(`[SyncService] Successfully repaired sync item ${invalidItem.id}`);
+        } else {
+          console.log(`[SyncService] Removing invalid sync item ${invalidItem.id} - original record not found or already synced`);
+          await db.pendingSync.delete(invalidItem.id!);
+        }
+      }
+    } catch (error) {
+      console.error('[SyncService] Error during cleanup:', error);
     }
   }
 
@@ -237,6 +298,8 @@ export class SyncService {
     if (!this.convexClient) {
       throw new Error('Convex client not initialized');
     }
+
+    console.log(`[SyncService] Executing sync: ${item.operation} for record ${item.recordId}`);
 
     // Add to offline queue if we're offline
     if (!this.isOnline) {
@@ -249,9 +312,47 @@ export class SyncService {
       switch (item.operation) {
         case 'create':
           if (!item.data) {
-            throw new Error('Missing data for create operation');
+            console.error('[SyncService] Missing data for create operation. Attempting data recovery...');
+            
+            // Try to recover data from the original record
+            const originalRecord = await db.compensationRecords.get(item.recordId);
+            if (originalRecord && originalRecord.syncStatus === 'pending') {
+              const recoveredData = {
+                userId: originalRecord.userId,
+                type: originalRecord.type,
+                encryptedData: {
+                  data: originalRecord.encryptedData.encryptedData,
+                  iv: originalRecord.encryptedData.iv,
+                  salt: originalRecord.encryptedData.salt,
+                },
+                currency: originalRecord.currency,
+              };
+              
+              console.log(`[SyncService] Data recovery successful for record ${item.recordId}`);
+              
+              // Update the sync item with recovered data
+              await db.pendingSync.update(item.id!, { data: recoveredData });
+              item.data = recoveredData;
+            } else {
+              console.error('[SyncService] Data recovery failed - original record not found or already synced');
+              throw new Error('Missing data for create operation and recovery failed');
+            }
           }
-          console.log('Sync create operation - data:', JSON.stringify(item.data, null, 2));
+          
+          // Validate the data structure
+          const createData = item.data as unknown as CreateCompensationSyncData;
+          if (!createData.userId || !createData.type || !createData.encryptedData || !createData.currency) {
+            console.error('[SyncService] Invalid data structure:', {
+              hasUserId: !!createData.userId,
+              hasType: !!createData.type,
+              hasEncryptedData: !!createData.encryptedData,
+              hasCurrency: !!createData.currency,
+              data: createData
+            });
+            throw new Error('Invalid data structure for create operation');
+          }
+          
+          console.log(`[SyncService] Syncing create operation for ${createData.type} record`);
           await this.convexClient.mutation(api.compensationRecords.createCompensationRecord, item.data as unknown as CreateCompensationSyncData);
           break;
         
@@ -378,6 +479,45 @@ export class SyncService {
         console.error('Error in sync listener:', error);
       }
     });
+  }
+
+  /**
+   * Start health check for sync queue
+   */
+  private static startHealthCheck(): void {
+    if (typeof window === 'undefined') return;
+
+    // Check sync queue health every 5 minutes
+    setInterval(() => {
+      this.checkSyncHealth();
+    }, 5 * 60 * 1000);
+  }
+
+  /**
+   * Check sync queue health and repair if needed
+   */
+  private static async checkSyncHealth(): Promise<void> {
+    try {
+      console.log('[SyncService] Running health check...');
+      
+      // Count pending items
+      const pendingItems = await db.pendingSync.where('status').equals('pending').count();
+      
+      if (pendingItems > 0) {
+        console.log(`[SyncService] Found ${pendingItems} pending sync items`);
+        
+        // Clean up invalid items
+        await this.cleanupInvalidSyncItems();
+        
+        // Trigger sync if online
+        if (this.isOnline && !this.syncInProgress) {
+          console.log('[SyncService] Triggering sync from health check');
+          this.triggerSync();
+        }
+      }
+    } catch (error) {
+      console.error('[SyncService] Health check failed:', error);
+    }
   }
 
   /**

@@ -36,6 +36,7 @@ export class LocalStorageService {
             },
             currency: createdRecord.currency,
           };
+          
           await this.addToSyncQueue('create', 'compensationRecords', id, syncData);
         }
       }
@@ -135,6 +136,21 @@ export class LocalStorageService {
     recordId: number,
     data?: any
   ): Promise<void> {
+    // Validate data for create operations
+    if (operation === 'create' && data) {
+      const isValidCreateData = data.userId && data.type && data.encryptedData && data.currency;
+      if (!isValidCreateData) {
+        console.error('[LocalStorageService] Invalid sync data structure:', {
+          hasUserId: !!data.userId,
+          hasType: !!data.type,
+          hasEncryptedData: !!data.encryptedData,
+          hasCurrency: !!data.currency,
+          data
+        });
+        throw new Error('Invalid sync data structure for create operation');
+      }
+    }
+
     const syncItem: Omit<PendingSyncItem, 'id'> = {
       userId: 'current-user', // TODO: Get from auth context
       createdAt: Date.now(),
@@ -147,7 +163,14 @@ export class LocalStorageService {
       status: 'pending',
     };
 
-    await db.pendingSync.add(syncItem as PendingSyncItem);
+    const syncItemId = await db.pendingSync.add(syncItem as PendingSyncItem);
+    
+    // Verify the item was stored correctly
+    const storedItem = await db.pendingSync.get(syncItemId);
+    if (!storedItem || !storedItem.data) {
+      console.error('[LocalStorageService] Failed to store sync item data properly');
+      throw new Error('Failed to store sync item data');
+    }
   }
 
   /**
