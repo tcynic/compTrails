@@ -396,7 +396,8 @@ export class SyncService {
   static async addToOfflineQueue(
     operation: 'create' | 'update' | 'delete',
     recordId: string,
-    data?: any
+    data?: any,
+    priority: 'normal' | 'high' | 'emergency' = 'normal'
   ): Promise<void> {
     const queueItem: Omit<OfflineQueueItem, 'id'> = {
       method: 'POST', // Not used anymore, but kept for compatibility
@@ -405,14 +406,23 @@ export class SyncService {
         operation,
         recordId,
         data,
+        priority,
+        emergencySync: priority === 'emergency',
       },
       timestamp: Date.now(),
       attempts: 0,
-      maxAttempts: 3,
+      maxAttempts: priority === 'emergency' ? 1 : 3, // Less retries for emergency items
       status: 'pending',
     };
 
     await db.offlineQueue.add(queueItem as OfflineQueueItem);
+    
+    logSyncEvent('info', `Added to offline queue: ${operation} for ${recordId} (priority: ${priority})`);
+    
+    // Trigger immediate emergency sync if this is an emergency item
+    if (priority === 'emergency') {
+      await this.triggerEmergencySync();
+    }
   }
 
   /**
@@ -756,23 +766,41 @@ export class SyncService {
     }
 
     try {
-      // Get pending sync data
-      const syncData = await this.prepareSyncPayload();
+      // Get optimized emergency sync data
+      const syncData = await this.prepareEmergencyPayload();
       
       if (!syncData || syncData.length === 0) {
         logSyncEvent('info', 'No data to beacon sync');
         return true;
       }
 
-      // Send via beacon
-      const payload = JSON.stringify(syncData);
+      // Add metadata for emergency sync tracking
+      const payload = JSON.stringify({
+        emergency: true,
+        timestamp: Date.now(),
+        items: syncData,
+        totalItems: syncData.length,
+      });
+
       const endpoint = '/api/emergency-sync';
       const success = navigator.sendBeacon(endpoint, payload);
 
       if (success) {
-        logSyncEvent('info', 'Beacon sync successful');
+        logSyncEvent('info', `Beacon sync successful - ${syncData.length} items`);
         // Mark items as attempted (they will be processed by the server)
         await this.markBeaconSyncAttempted(syncData);
+        
+        // Track emergency sync analytics
+        if (typeof window !== 'undefined') {
+          const { AnalyticsService } = await import('./analyticsService');
+          AnalyticsService.trackEmergencySync({
+            sync_type: 'emergency',
+            method: 'beacon',
+            success: true,
+            pending_items: syncData.length,
+            trigger_type: 'auto',
+          });
+        }
       } else {
         logSyncEvent('warn', 'Beacon sync failed, trying fallback');
         return await this.fallbackFetchSync();
@@ -781,6 +809,23 @@ export class SyncService {
       return success;
     } catch (error) {
       logSyncEvent('error', 'Beacon sync error', error);
+      
+      // Track failed emergency sync
+      if (typeof window !== 'undefined') {
+        try {
+          const { AnalyticsService } = await import('./analyticsService');
+          AnalyticsService.trackEmergencySync({
+            sync_type: 'emergency',
+            method: 'beacon',
+            success: false,
+            error_type: error instanceof Error ? error.name : 'unknown',
+            trigger_type: 'auto',
+          });
+        } catch {
+          // Ignore analytics errors during emergency sync
+        }
+      }
+      
       return await this.fallbackFetchSync();
     }
   }
@@ -858,6 +903,147 @@ export class SyncService {
     }
 
     return syncData;
+  }
+
+  /**
+   * Prepare optimized emergency sync payload for beacon transmission
+   * Prioritizes recent and critical data with size limits
+   */
+  private static async prepareEmergencyPayload(): Promise<any[]> {
+    const recentThreshold = Date.now() - 10 * 60 * 1000; // Last 10 minutes only
+    const maxItems = 5; // Limit for emergency sync
+    
+    // Get emergency items first, then other recent items
+    const [emergencyOffline, urgentPending, urgentOffline] = await Promise.all([
+      // Priority 1: Emergency items
+      db.offlineQueue
+        .where('status').equals('pending')
+        .filter(item => item.data?.emergencySync === true)
+        .toArray(),
+      // Priority 2: Recent pending sync items
+      db.pendingSync
+        .where('status').equals('pending')
+        .filter(item => item.createdAt > recentThreshold)
+        .limit(maxItems)
+        .toArray(),
+      // Priority 3: Recent offline queue items
+      db.offlineQueue
+        .where('status').equals('pending')
+        .filter(item => item.timestamp > recentThreshold && !item.data?.emergencySync)
+        .limit(maxItems)
+        .toArray(),
+    ]);
+
+    const syncData: any[] = [];
+
+    // Enhanced priority function with emergency support
+    const prioritizeItem = (item: any) => {
+      // Emergency items get top priority
+      if (item.data?.emergencySync || item.data?.priority === 'emergency') {
+        return 0; // Highest priority
+      }
+      
+      const operation = item.operation || item.data?.operation;
+      const priority = item.data?.priority;
+      
+      if (priority === 'high' || operation === 'create' || operation === 'update' || operation === 'delete') {
+        return 1; // High priority
+      }
+      
+      if (priority === 'normal') {
+        return 2; // Normal priority
+      }
+      
+      return 3; // Lower priority
+    };
+
+    // Add emergency items first (always included)
+    emergencyOffline.forEach(item => {
+      syncData.push({
+        id: item.id,
+        type: 'offline_queue',
+        op: item.data?.operation,
+        rid: item.data?.recordId,
+        data: this.compressPayloadData(item.data?.data),
+        ts: item.timestamp,
+        emergency: true,
+        priority: item.data?.priority || 'emergency',
+      });
+    });
+
+    // Add high-priority pending sync items with minimal payload
+    urgentPending
+      .sort((a, b) => prioritizeItem(a) - prioritizeItem(b))
+      .slice(0, maxItems - syncData.length) // Reserve space for emergency items
+      .forEach(item => {
+        syncData.push({
+          id: item.id,
+          type: 'pending_sync',
+          op: item.operation, // Shortened field names
+          rid: item.recordId,
+          data: this.compressPayloadData(item.data), // Compress data
+          tbl: item.tableName,
+          ts: item.createdAt,
+          priority: 'normal',
+        });
+      });
+
+    // Add remaining offline queue items if space allows
+    const remainingSpace = maxItems - syncData.length;
+    if (remainingSpace > 0) {
+      urgentOffline
+        .sort((a, b) => prioritizeItem(a) - prioritizeItem(b))
+        .slice(0, remainingSpace)
+        .forEach(item => {
+          syncData.push({
+            id: item.id,
+            type: 'offline_queue',
+            op: item.data?.operation,
+            rid: item.data?.recordId,
+            data: this.compressPayloadData(item.data?.data),
+            ts: item.timestamp,
+            priority: item.data?.priority || 'normal',
+          });
+        });
+    }
+
+    // Limit total payload size for beacon (typically 64KB limit)
+    const totalSize = JSON.stringify(syncData).length;
+    if (totalSize > 32000) { // 32KB safety limit
+      logSyncEvent('warn', `Emergency payload size ${totalSize} exceeds limit, truncating`);
+      // Keep emergency items but trim others
+      const emergencyItems = syncData.filter(item => item.emergency);
+      const otherItems = syncData.filter(item => !item.emergency);
+      const trimmedOthers = otherItems.slice(0, Math.floor(otherItems.length / 2));
+      return [...emergencyItems, ...trimmedOthers];
+    }
+
+    return syncData;
+  }
+
+  /**
+   * Compress payload data by removing non-essential fields
+   */
+  private static compressPayloadData(data: any): any {
+    if (!data || typeof data !== 'object') {
+      return data;
+    }
+
+    // Remove computed and non-essential fields to reduce payload size
+    const compressed = { ...data };
+    
+    // Remove metadata that can be regenerated
+    delete compressed.createdAt;
+    delete compressed.modifiedAt;
+    delete compressed.version;
+    delete compressed.syncStatus;
+    
+    // Remove UI-only fields
+    delete compressed.isExpanded;
+    delete compressed.isSelected;
+    delete compressed.displayOrder;
+    
+    return compressed;
   }
 
   /**
@@ -969,6 +1155,162 @@ export class SyncService {
     } catch (error) {
       logSyncEvent('error', 'Error getting background sync status', error);
       return { supported: true, registered: [], queueSize: 0 };
+    }
+  }
+
+  /**
+   * Test emergency sync functionality (for development/debugging)
+   */
+  static async testEmergencySync(): Promise<{
+    beaconSupported: boolean;
+    fetchKeepaliveSupported: boolean;
+    serviceWorkerSupported: boolean;
+    emergencySyncSuccess: boolean;
+    payloadSize: number;
+    duration: number;
+  }> {
+    const startTime = Date.now();
+    const testResults = {
+      beaconSupported: typeof navigator !== 'undefined' && 'sendBeacon' in navigator,
+      fetchKeepaliveSupported: typeof fetch !== 'undefined',
+      serviceWorkerSupported: 'serviceWorker' in navigator,
+      emergencySyncSuccess: false,
+      payloadSize: 0,
+      duration: 0,
+    };
+
+    try {
+      // Create test data for emergency sync
+      await this.addToOfflineQueue('create', 'test-emergency-sync', { test: true }, 'emergency');
+      
+      // Test emergency payload preparation
+      const payload = await this.prepareEmergencyPayload();
+      testResults.payloadSize = JSON.stringify(payload).length;
+      
+      // Test beacon sync (if supported)
+      if (testResults.beaconSupported) {
+        testResults.emergencySyncSuccess = await this.sendBeaconSync();
+      } else if (testResults.fetchKeepaliveSupported) {
+        testResults.emergencySyncSuccess = await this.fallbackFetchSync();
+      }
+      
+      // Clean up test data
+      await db.offlineQueue.filter(item => !!(item.data && (item.data as any).test === true)).delete();
+      
+      logSyncEvent('info', 'Emergency sync test completed', testResults);
+    } catch (error) {
+      logSyncEvent('error', 'Emergency sync test failed', error);
+    }
+
+    testResults.duration = Date.now() - startTime;
+    return testResults;
+  }
+
+  /**
+   * Validate emergency sync configuration and browser capabilities
+   */
+  static validateEmergencySyncCapabilities(): {
+    supported: boolean;
+    features: {
+      beaconApi: boolean;
+      fetchKeepalive: boolean;
+      serviceWorker: boolean;
+      visibilityApi: boolean;
+      pageLifecycleApi: boolean;
+    };
+    recommendations: string[];
+  } {
+    const features = {
+      beaconApi: typeof navigator !== 'undefined' && 'sendBeacon' in navigator,
+      fetchKeepalive: typeof fetch !== 'undefined',
+      serviceWorker: 'serviceWorker' in navigator,
+      visibilityApi: typeof document !== 'undefined' && 'visibilityState' in document,
+      pageLifecycleApi: typeof window !== 'undefined' && 'addEventListener' in window,
+    };
+
+    const recommendations: string[] = [];
+    let supported = false;
+
+    // Check if at least one sync method is available
+    if (features.beaconApi || features.fetchKeepalive) {
+      supported = true;
+    } else {
+      recommendations.push('Emergency sync requires Beacon API or Fetch API support');
+    }
+
+    // Check for page lifecycle support
+    if (!features.visibilityApi) {
+      recommendations.push('Page Visibility API not supported - visibility change sync disabled');
+    }
+
+    if (!features.pageLifecycleApi) {
+      recommendations.push('Page lifecycle events not supported - beforeunload sync disabled');
+    }
+
+    if (!features.serviceWorker) {
+      recommendations.push('Service Worker not supported - background sync disabled');
+    }
+
+    // Browser-specific recommendations
+    if (typeof navigator !== 'undefined') {
+      const userAgent = navigator.userAgent;
+      if (userAgent.includes('Safari') && !userAgent.includes('Chrome')) {
+        recommendations.push('Safari has limited Background Sync support - relying on beacon/fetch');
+      }
+      if (userAgent.includes('Firefox')) {
+        recommendations.push('Firefox has experimental Background Sync support');
+      }
+    }
+
+    return {
+      supported,
+      features,
+      recommendations,
+    };
+  }
+
+  /**
+   * Get emergency sync health metrics
+   */
+  static async getEmergencySyncHealth(): Promise<{
+    queueSize: number;
+    emergencyItems: number;
+    oldestItemAge: number;
+    recentFailures: number;
+    avgSyncDuration: number;
+  }> {
+    try {
+      const [queueItems, emergencyItems] = await Promise.all([
+        db.offlineQueue.where('status').equals('pending').toArray(),
+        db.offlineQueue.filter(item => !!(item.data && (item.data as any).emergencySync === true)).toArray(),
+      ]);
+
+      const now = Date.now();
+      const oldestItem = queueItems.sort((a, b) => a.timestamp - b.timestamp)[0];
+      const oldestItemAge = oldestItem ? now - oldestItem.timestamp : 0;
+
+      // Get recent failures (last 24 hours)
+      const dayAgo = now - 24 * 60 * 60 * 1000;
+      const recentFailures = queueItems.filter(item => 
+        item.timestamp > dayAgo && item.attempts > 0
+      ).length;
+
+      return {
+        queueSize: queueItems.length,
+        emergencyItems: emergencyItems.length,
+        oldestItemAge,
+        recentFailures,
+        avgSyncDuration: 0, // Would need to track this in actual sync operations
+      };
+    } catch (error) {
+      logSyncEvent('error', 'Error getting emergency sync health', error);
+      return {
+        queueSize: 0,
+        emergencyItems: 0,
+        oldestItemAge: 0,
+        recentFailures: 0,
+        avgSyncDuration: 0,
+      };
     }
   }
 

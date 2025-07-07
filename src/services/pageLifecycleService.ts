@@ -253,21 +253,46 @@ class PageLifecycleService {
   };
   
   /**
-   * Execute emergency sync with debouncing
+   * Execute emergency sync with intelligent debouncing
    */
   private debouncedEmergencySync(trigger: string): void {
+    // Clear existing timer if any
     if (this.debounceTimer) {
       clearTimeout(this.debounceTimer);
     }
     
-    this.debounceTimer = setTimeout(() => {
+    // Different debounce strategies based on trigger type
+    let debounceTime = this.config.debounceMs;
+    
+    switch (trigger) {
+      case 'visibilitychange':
+        // Shorter debounce for visibility changes to catch quick tab switches
+        debounceTime = Math.min(this.config.debounceMs, 500);
+        break;
+      case 'beforeunload':
+      case 'pagehide':
+        // No debounce for critical events - execute immediately
+        debounceTime = 0;
+        break;
+      default:
+        // Use configured debounce time
+        break;
+    }
+    
+    if (debounceTime === 0) {
+      // Execute immediately for critical events
       this.executeEmergencySync(trigger);
-      this.debounceTimer = null;
-    }, this.config.debounceMs);
+    } else {
+      // Use debounced execution for other events
+      this.debounceTimer = setTimeout(() => {
+        this.executeEmergencySync(trigger);
+        this.debounceTimer = null;
+      }, debounceTime);
+    }
   }
   
   /**
-   * Execute emergency sync callbacks
+   * Execute emergency sync callbacks with enhanced error handling
    */
   private executeEmergencySync(trigger: string): void {
     if (this.isProcessing) {
@@ -280,21 +305,28 @@ class PageLifecycleService {
       return;
     }
     
+    const startTime = Date.now();
     this.log(`Executing emergency sync for ${trigger}`);
     this.isProcessing = true;
     
     const promises: Promise<void>[] = [];
+    let syncSuccess = true;
     
     this.emergencySyncCallbacks.forEach(callback => {
       try {
         const result = callback();
         if (result && typeof result.then === 'function') {
-          promises.push(result.catch(error => {
-            console.error('PageLifecycleService: Error in emergency sync callback:', error);
-          }));
+          promises.push(
+            result.catch(error => {
+              console.error('PageLifecycleService: Error in emergency sync callback:', error);
+              syncSuccess = false;
+              return Promise.resolve(); // Don't let one failure stop others
+            })
+          );
         }
       } catch (error) {
         console.error('PageLifecycleService: Error in emergency sync callback:', error);
+        syncSuccess = false;
       }
     });
     
@@ -304,13 +336,44 @@ class PageLifecycleService {
         Promise.all(promises),
         new Promise(resolve => setTimeout(resolve, 5000)) // 5 second timeout
       ]).finally(() => {
+        const duration = Date.now() - startTime;
         this.isProcessing = false;
-        this.log(`Emergency sync completed for ${trigger}`);
+        this.log(`Emergency sync completed for ${trigger} in ${duration}ms`);
+        
+        // Track emergency sync analytics if available
+        this.trackEmergencySync(trigger, syncSuccess, duration);
       });
     } else {
+      const duration = Date.now() - startTime;
       this.isProcessing = false;
-      this.log(`Emergency sync completed for ${trigger}`);
+      this.log(`Emergency sync completed for ${trigger} in ${duration}ms`);
+      
+      // Track emergency sync analytics if available
+      this.trackEmergencySync(trigger, syncSuccess, duration);
     }
+  }
+  
+  /**
+   * Track emergency sync events for analytics
+   */
+  private trackEmergencySync(trigger: string, success: boolean, duration: number): void {
+    if (typeof window === 'undefined') return;
+    
+    // Dynamically import analytics to avoid circular dependencies
+    import('./analyticsService').then(({ AnalyticsService }) => {
+      AnalyticsService.trackPageLifecycleSync(
+        trigger as 'beforeunload' | 'visibilitychange' | 'pagehide',
+        success,
+        {
+          duration_ms: duration,
+          sync_type: 'emergency',
+          trigger_type: 'auto',
+        }
+      );
+    }).catch(error => {
+      // Ignore analytics errors during emergency sync
+      console.warn('Failed to track emergency sync analytics:', error);
+    });
   }
   
   /**
