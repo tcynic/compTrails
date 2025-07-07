@@ -1,5 +1,6 @@
 import { KeyDerivationParams, EncryptionError } from './types';
 import { CryptoUtils } from './encryption';
+import type { HashOptions } from 'argon2-browser';
 
 export class KeyDerivation {
   // Default Argon2id parameters - balanced for security and performance
@@ -28,28 +29,40 @@ export class KeyDerivation {
     }
 
     try {
-      // Dynamically import argon2-browser (now handled as external by webpack)
-      const argon2Module = await import('argon2-browser');
+      // Import argon2-browser with proper destructuring
+      const { hash } = await import('argon2-browser');
+      
+      if (typeof hash !== 'function') {
+        throw new Error('Argon2 hash function not available');
+      }
       
       console.log('Successfully loaded Argon2 - using secure key derivation');
       
       // Return a wrapper that handles the argon2-browser API
-      return async (options: Record<string, any>) => {
+      return async (options: HashOptions) => {
         try {
-          // Get the hash function from the argon2-browser module
-          // The module exports an object with a hash property
-          const argon2 = argon2Module.default || argon2Module;
-          const result = await (argon2 as any).hash(options);
+          console.log('Calling Argon2 hash with options:', {
+            type: options.type,
+            mem: options.mem,
+            time: options.time,
+            parallelism: options.parallelism,
+            hashLen: options.hashLen
+          });
+          
+          const result = await hash(options);
+          console.log('Argon2 hash completed successfully');
           return result;
         } catch (argon2Error) {
-          console.warn('Argon2 hashing failed, falling back to PBKDF2:', argon2Error);
+          console.error('Argon2 hashing failed:', argon2Error);
+          console.warn('Falling back to PBKDF2 due to Argon2 error');
           // Fallback to PBKDF2 if Argon2 hash fails at runtime
           const fallback = this.getPBKDF2Fallback();
           return await fallback(options);
         }
       };
     } catch (importError) {
-      console.warn('Failed to load Argon2 module, falling back to enhanced PBKDF2:', importError);
+      console.error('Failed to load Argon2 module:', importError);
+      console.warn('Falling back to enhanced PBKDF2');
       return this.getPBKDF2Fallback();
     }
   }
@@ -61,7 +74,7 @@ export class KeyDerivation {
   private static getPBKDF2Fallback() {
     console.info('Using enhanced PBKDF2 with high iteration count for key derivation');
     
-    return async (options: Record<string, any>) => {
+    return async (options: HashOptions) => {
       const encoder = new TextEncoder();
       const passwordBuffer = encoder.encode(options.pass);
       const saltBuffer = options.salt;
@@ -81,7 +94,7 @@ export class KeyDerivation {
       const timeScaling = Math.max(1, options.time || this.DEFAULT_PARAMS.iterations);
       const iterations = Math.floor(baseIterations * memoryScaling * timeScaling);
       
-      console.info(`Using PBKDF2 with ${iterations.toLocaleString()} iterations`);
+      console.info(`Using PBKDF2 fallback with ${iterations.toLocaleString()} iterations`);
       
       const derivedBits = await crypto.subtle.deriveBits(
         {

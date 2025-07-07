@@ -4,11 +4,12 @@
   "private": true,
   "scripts": {
     "dev": "next dev --turbopack",
-    "build": "next build",
+    "build": "npm run copy-wasm && next build",
     "build:analyze": "ANALYZE=true npm run build",
     "start": "next start",
     "lint": "next lint",
     "format": "prettier --write .",
+    "copy-wasm": "cp node_modules/argon2-browser/dist/*.wasm public/ || true",
     "deploy:staging": "vercel --prod --scope=staging",
     "deploy:prod": "vercel --prod"
   },

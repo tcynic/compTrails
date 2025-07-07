@@ -119,22 +119,43 @@ const withPWA = require('next-pwa')({
 
 const nextConfig: NextConfig = {
   webpack: (config, { isServer }) => {
-    // Handle argon2-browser external configuration
+    // Handle argon2-browser configuration for proper WASM support
     if (isServer) {
       // Exclude argon2-browser completely from server-side builds
       config.externals = config.externals || [];
       config.externals.push('argon2-browser');
     } else {
-      // Client-side: Configure externals to prevent bundling
-      config.externals = config.externals || {};
+      // Client-side: Enable proper bundling of argon2-browser
+      // Remove any externals configuration that might interfere
+      if (config.externals && typeof config.externals === 'object') {
+        delete config.externals['argon2-browser'];
+      }
       
-      // Treat argon2-browser as external to avoid WASM bundling issues
-      config.externals['argon2-browser'] = 'var undefined';
-      
-      // Also ignore the WASM file specifically
+      // Ensure resolve configuration doesn't block argon2-browser
       config.resolve = config.resolve || {};
       config.resolve.alias = config.resolve.alias || {};
-      config.resolve.alias['argon2-browser'] = false;
+      
+      // Remove any false alias that blocks argon2-browser
+      if (config.resolve.alias['argon2-browser'] === false) {
+        delete config.resolve.alias['argon2-browser'];
+      }
+      
+      // Configure proper WASM loading
+      config.resolve.fallback = config.resolve.fallback || {};
+      config.resolve.fallback.fs = false;
+      config.resolve.fallback.path = false;
+      
+      // Add rule for WASM files
+      config.module = config.module || {};
+      config.module.rules = config.module.rules || [];
+      config.module.rules.push({
+        test: /\.wasm$/,
+        type: 'asset/resource',
+      });
+      
+      // Ensure experiments.asyncWebAssembly is enabled for WASM support
+      config.experiments = config.experiments || {};
+      config.experiments.asyncWebAssembly = true;
     }
 
     return config;
