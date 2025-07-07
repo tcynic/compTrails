@@ -29,6 +29,46 @@ export class KeyDerivation {
     }
 
     try {
+      // Configure the WASM path to point to the public directory
+      // This prevents the library from trying to use the Node.js require path
+      // which causes base64 decoding errors
+      const global = globalThis as any;
+      
+      // Set the WASM path configuration BEFORE importing the module
+      global.argon2WasmPath = '/argon2.wasm';
+      global.argon2SimdWasmPath = '/argon2-simd.wasm';
+      
+      // Force argon2-browser to use browser environment detection
+      // This prevents it from detecting 'require' and using Node.js code paths
+      global.process = global.process || {};
+      global.process.browser = true;
+      global.process.env = global.process.env || {};
+      global.process.env.NODE_ENV = 'development';
+      
+      // Override the WASM binary loader to force using fetch instead of require
+      // This prevents the base64 decoding issue entirely
+      global.loadArgon2WasmBinary = async () => {
+        console.log('Loading WASM via custom fetch handler');
+        try {
+          const response = await fetch('/argon2.wasm');
+          if (!response.ok) {
+            throw new Error(`Failed to load WASM: ${response.status} ${response.statusText}`);
+          }
+          const arrayBuffer = await response.arrayBuffer();
+          console.log('WASM file loaded successfully via fetch');
+          return new Uint8Array(arrayBuffer);
+        } catch (error) {
+          console.error('Custom WASM loader failed:', error);
+          throw error;
+        }
+      };
+      
+      // Override the environment detection to force browser mode
+      global.loadArgon2WasmModule = async () => {
+        console.log('Loading Argon2 WASM module in browser mode');
+        return await WebAssembly.instantiate(await global.loadArgon2WasmBinary());
+      };
+      
       // Import argon2-browser with proper destructuring
       const { hash } = await import('argon2-browser');
       
@@ -54,6 +94,15 @@ export class KeyDerivation {
           return result;
         } catch (argon2Error) {
           console.error('Argon2 hashing failed:', argon2Error);
+          
+          // Check if it's a base64 decoding error specifically
+          if (argon2Error instanceof Error && argon2Error.message.includes('atob')) {
+            console.error('Base64 decoding error detected - WASM loading issue');
+            console.error('This usually indicates that the WASM file path is incorrect or the file is corrupted');
+          } else if (argon2Error instanceof Error && argon2Error.message.includes('Failed to load WASM')) {
+            console.error('WASM loading failed - check that /argon2.wasm is accessible');
+          }
+          
           console.warn('Falling back to PBKDF2 due to Argon2 error');
           // Fallback to PBKDF2 if Argon2 hash fails at runtime
           const fallback = this.getPBKDF2Fallback();
@@ -62,6 +111,15 @@ export class KeyDerivation {
       };
     } catch (importError) {
       console.error('Failed to load Argon2 module:', importError);
+      
+      // Check if it's a base64 decoding error during import
+      if (importError instanceof Error && importError.message.includes('atob')) {
+        console.error('Base64 decoding error during Argon2 import - WASM loading issue');
+        console.error('This usually indicates that the WASM file path is incorrect or the file is corrupted');
+      } else if (importError instanceof Error && importError.message.includes('Failed to load WASM')) {
+        console.error('WASM loading failed during import - check that /argon2.wasm is accessible');
+      }
+      
       console.warn('Falling back to enhanced PBKDF2');
       return this.getPBKDF2Fallback();
     }
