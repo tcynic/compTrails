@@ -118,7 +118,13 @@ const withPWA = require('next-pwa')({
 });
 
 const nextConfig: NextConfig = {
-  webpack: (config, { isServer }) => {
+  webpack: (config, { isServer, dev }) => {
+    // Only apply webpack config when not using Turbopack
+    // Turbopack handles module resolution differently
+    if (process.env.TURBOPACK) {
+      return config;
+    }
+
     // Handle argon2-browser configuration for proper WASM support
     if (isServer) {
       // Exclude argon2-browser completely from server-side builds
@@ -161,13 +167,11 @@ const nextConfig: NextConfig = {
     return config;
   },
   
-  // Turbopack-specific configurations (stable as of Next.js 15)
-  turbopack: {
-    rules: {
-      // Turbopack doesn't need argon2-browser server exclusion
-      // as it handles client/server boundaries differently
-    },
-  },
+  // External packages for server components (updated Next.js 15 syntax)
+  serverExternalPackages: ['argon2-browser'],
+  
+  // Turbopack handles WASM and modules better out of the box
+  // argon2-browser should work without special configuration in Turbopack
 };
 
 export default withBundleAnalyzer(withPWA(nextConfig));
