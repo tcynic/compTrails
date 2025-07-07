@@ -146,5 +146,8 @@ export function useAnalytics() {
     
     // Helper to check if analytics is ready
     isReady: isPostHogReady,
+    
+    // Ad blocker detection
+    isAdBlockerDetected: AnalyticsService.isAdBlockerDetected,
   };
 }

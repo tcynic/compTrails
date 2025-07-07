@@ -44,6 +44,9 @@ export interface PerformanceEventProperties extends AnalyticsEventProperties {
 export class AnalyticsService {
   private static isEnabled = true;
   private static isInitialized = false;
+  private static adBlockerDetected = false;
+  private static failedRequests = 0;
+  private static maxFailedRequests = 3;
 
   /**
    * Initialize the analytics service
@@ -55,6 +58,37 @@ export class AnalyticsService {
     }
 
     this.isInitialized = true;
+    this.failedRequests = 0; // Reset counter on successful initialization
+  }
+
+  /**
+   * Mark that an ad blocker has been detected
+   */
+  static setAdBlockerDetected(detected: boolean) {
+    this.adBlockerDetected = detected;
+    if (detected) {
+      this.isEnabled = false;
+      console.log('Analytics disabled due to ad blocker detection');
+    }
+  }
+
+  /**
+   * Check if ad blocker is detected
+   */
+  static isAdBlockerDetected(): boolean {
+    return this.adBlockerDetected;
+  }
+
+  /**
+   * Increment failed request counter and disable if threshold reached
+   */
+  private static handleFailedRequest() {
+    this.failedRequests++;
+    if (this.failedRequests >= this.maxFailedRequests) {
+      console.warn(`Analytics disabled after ${this.maxFailedRequests} failed requests (likely ad blocker)`);
+      this.isEnabled = false;
+      this.adBlockerDetected = true;
+    }
   }
 
   /**
@@ -93,7 +127,7 @@ export class AnalyticsService {
    * Track a generic event
    */
   private static track(eventName: string, properties?: AnalyticsEventProperties) {
-    if (!this.getEnabled() || typeof window === 'undefined') {
+    if (!this.getEnabled() || typeof window === 'undefined' || this.adBlockerDetected) {
       return;
     }
 
@@ -101,18 +135,20 @@ export class AnalyticsService {
       // Multiple layers of PostHog initialization checks
       if (!posthog) {
         console.warn('PostHog instance not available, skipping event:', eventName);
+        this.handleFailedRequest();
         return;
       }
 
       if (typeof posthog.capture !== 'function') {
         console.warn('PostHog capture method not available, skipping event:', eventName);
+        this.handleFailedRequest();
         return;
       }
 
       // Check if PostHog is properly loaded
       if (!posthog.__loaded) {
         console.warn('PostHog not yet loaded, skipping event:', eventName);
-        return;
+        return; // Don't count this as a failed request, just not ready yet
       }
 
       // Additional safety check for the capture function
@@ -121,11 +157,23 @@ export class AnalyticsService {
           ...properties,
           timestamp: Date.now(),
         });
+        
+        // Reset failed request counter on successful tracking
+        if (this.failedRequests > 0) {
+          this.failedRequests = Math.max(0, this.failedRequests - 1);
+        }
       } else {
         console.warn('PostHog capture function appears invalid, skipping event:', eventName);
+        this.handleFailedRequest();
       }
     } catch (error) {
       console.warn('Analytics tracking failed for event:', eventName, 'Error:', error);
+      
+      // Check if this is a network-related error that suggests ad blocking
+      const errorMessage = error?.toString?.() || '';
+      if (errorMessage.includes('blocked') || errorMessage.includes('network') || errorMessage.includes('fetch')) {
+        this.handleFailedRequest();
+      }
     }
   }
 
