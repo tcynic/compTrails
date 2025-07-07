@@ -6,7 +6,17 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useRouter } from 'next/navigation';
 import { DashboardLayout } from '@/components/layouts/dashboard-layout';
 import { Button } from '@/components/ui/button';
-import { Plus } from 'lucide-react';
+import { 
+  Dialog, 
+  DialogContent, 
+  DialogHeader, 
+  DialogTitle, 
+  DialogDescription, 
+  DialogFooter 
+} from '@/components/ui/dialog';
+import { LocalStorageService } from '@/services/localStorageService';
+import { AnalyticsService } from '@/services/analyticsService';
+import { Plus, Trash2 } from 'lucide-react';
 
 // Lazy load heavy salary components
 const AddSalaryForm = dynamic(() => import('@/components/features/salary/add-salary-form').then(mod => ({ default: mod.AddSalaryForm })), {
@@ -20,6 +30,8 @@ const SalaryList = dynamic(() => import('@/components/features/salary/salary-lis
 export default function SalaryPage() {
   const [showAddForm, setShowAddForm] = useState(false);
   const [refreshTrigger, setRefreshTrigger] = useState(0);
+  const [deleteRecord, setDeleteRecord] = useState<any>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
   const { user, loading } = useAuth();
   const router = useRouter();
 
@@ -43,6 +55,34 @@ export default function SalaryPage() {
 
   const handleAddSuccess = () => {
     setRefreshTrigger(prev => prev + 1);
+  };
+
+  const handleDeleteSalary = async () => {
+    if (!deleteRecord || !user) return;
+    
+    setIsDeleting(true);
+    try {
+      // Delete from local storage (which handles sync queue)
+      await LocalStorageService.deleteCompensationRecord(deleteRecord.id);
+      
+      // Track deletion analytics
+      AnalyticsService.trackDataEvent({
+        data_type: 'salary',
+        action: 'delete',
+      });
+      
+      // Close dialog and refresh list
+      setDeleteRecord(null);
+      setRefreshTrigger(prev => prev + 1);
+      
+      console.log('Salary record deleted successfully');
+    } catch (error) {
+      console.error('Failed to delete salary record:', error);
+      // Show error to user - for now using alert, could be replaced with toast system
+      alert('Failed to delete salary record. Please try again.');
+    } finally {
+      setIsDeleting(false);
+    }
   };
 
   return (
@@ -71,8 +111,7 @@ export default function SalaryPage() {
             console.log('Edit salary:', record);
           }}
           onDelete={(record) => {
-            // TODO: Implement delete functionality
-            console.log('Delete salary:', record);
+            setDeleteRecord(record);
           }}
         />
 
@@ -81,6 +120,60 @@ export default function SalaryPage() {
           onClose={() => setShowAddForm(false)}
           onSuccess={handleAddSuccess}
         />
+
+        {/* Delete Confirmation Dialog */}
+        <Dialog open={!!deleteRecord} onOpenChange={() => setDeleteRecord(null)}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Delete Salary Record</DialogTitle>
+              <DialogDescription>
+                Are you sure you want to delete this salary record? This action cannot be undone.
+              </DialogDescription>
+            </DialogHeader>
+            {deleteRecord && (
+              <div className="py-4">
+                <div className="bg-gray-50 p-4 rounded-lg space-y-2">
+                  <p className="text-sm text-gray-600">
+                    <span className="font-medium">Company:</span> {deleteRecord.company || 'N/A'}
+                  </p>
+                  <p className="text-sm text-gray-600">
+                    <span className="font-medium">Title:</span> {deleteRecord.title || 'N/A'}
+                  </p>
+                  <p className="text-sm text-gray-600">
+                    <span className="font-medium">Amount:</span> {deleteRecord.currency} {deleteRecord.amount?.toLocaleString() || 'N/A'}
+                  </p>
+                </div>
+              </div>
+            )}
+            <DialogFooter>
+              <Button
+                variant="outline"
+                onClick={() => setDeleteRecord(null)}
+                disabled={isDeleting}
+              >
+                Cancel
+              </Button>
+              <Button
+                variant="destructive"
+                onClick={handleDeleteSalary}
+                disabled={isDeleting}
+                className="bg-red-600 hover:bg-red-700"
+              >
+                {isDeleting ? (
+                  <>
+                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                    Deleting...
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="h-4 w-4 mr-2" />
+                    Delete
+                  </>
+                )}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
     </DashboardLayout>
   );
