@@ -4,6 +4,8 @@ import { createContext, useContext, useEffect, useState, ReactNode } from 'react
 import { type ServiceWorkerStatus } from '@/lib/db';
 import { SyncService, type SyncStatus } from '@/services/syncService';
 import { useConvex } from 'convex/react';
+import PageLifecycleService from '@/services/pageLifecycleService';
+import { getSyncConfig } from '@/lib/config/syncConfig';
 
 interface OfflineContextType {
   isOnline: boolean;
@@ -11,6 +13,8 @@ interface OfflineContextType {
   syncStatus: SyncStatus;
   triggerSync: () => Promise<void>;
   clearCaches: () => Promise<void>;
+  triggerEmergencySync: () => void;
+  isPageVisible: boolean;
 }
 
 const OfflineContext = createContext<OfflineContextType | null>(null);
@@ -23,6 +27,7 @@ export function OfflineProvider({ children }: OfflineProviderProps) {
   const [isOnline, setIsOnline] = useState(true);
   const [serviceWorkerStatus, setServiceWorkerStatus] = useState<ServiceWorkerStatus>('installing');
   const [syncStatus, setSyncStatus] = useState<SyncStatus>('idle');
+  const [isPageVisible, setIsPageVisible] = useState(true);
   const convex = useConvex();
 
   useEffect(() => {
@@ -94,6 +99,31 @@ export function OfflineProvider({ children }: OfflineProviderProps) {
     // Setup sync status listener
     const unsubscribeSync = SyncService.addSyncListener(setSyncStatus);
 
+    // Initialize PageLifecycleService
+    const config = getSyncConfig();
+    PageLifecycleService.initialize({
+      debounceMs: config.emergency.debounceMs,
+      enableBeforeUnload: config.emergency.beforeUnloadSync,
+      enableVisibilityChange: config.emergency.visibilityChangeSync,
+      enablePageHide: true,
+      logEvents: config.debugging.logLevel === 'debug',
+    });
+
+    // Setup emergency sync callback
+    const unsubscribeEmergencySync = PageLifecycleService.onEmergencySync(async () => {
+      await SyncService.emergencySync();
+    });
+
+    // Setup visibility change callback
+    const unsubscribeVisibilityChange = PageLifecycleService.onVisibilityChange((hidden) => {
+      setIsPageVisible(!hidden);
+      
+      // Trigger sync when page becomes visible (user returns to tab)
+      if (!hidden && isOnline) {
+        SyncService.triggerSync();
+      }
+    });
+
     // Listen for background sync messages from service worker
     const handleBackgroundSync = () => {
       SyncService.triggerSync();
@@ -114,13 +144,22 @@ export function OfflineProvider({ children }: OfflineProviderProps) {
         navigator.serviceWorker?.removeEventListener('controllerchange', handleControllerChange);
       }
       
+      // Clean up PageLifecycleService
+      unsubscribeEmergencySync();
+      unsubscribeVisibilityChange();
+      PageLifecycleService.cleanup();
+      
       unsubscribeSync();
       SyncService.cleanup();
     };
-  }, [convex]);
+  }, [convex, isOnline]);
 
   const triggerSync = async () => {
     await SyncService.forceSync();
+  };
+
+  const triggerEmergencySync = () => {
+    SyncService.triggerEmergencySync();
   };
 
   const clearCaches = async () => {
@@ -137,6 +176,8 @@ export function OfflineProvider({ children }: OfflineProviderProps) {
     syncStatus,
     triggerSync,
     clearCaches,
+    triggerEmergencySync,
+    isPageVisible,
   };
 
   return (

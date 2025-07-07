@@ -4,6 +4,7 @@ import type { PendingSyncItem, OfflineQueueItem, CreateCompensationSyncData, Upd
 import { api } from '../../convex/_generated/api';
 import { ConvexReactClient } from 'convex/react';
 import { Id } from '../../convex/_generated/dataModel';
+import { getSyncConfig, logSyncEvent } from '@/lib/config/syncConfig';
 
 export class SyncService {
   private static isOnline = true;
@@ -580,6 +581,317 @@ export class SyncService {
     } catch (error) {
       console.error('Error clearing invalid sync items:', error);
     }
+  }
+
+  /**
+   * Emergency sync for page closure scenarios
+   * Uses fast sync methods with minimal delay
+   */
+  static async emergencySync(): Promise<boolean> {
+    const config = getSyncConfig();
+    
+    if (!config.emergency.enabled) {
+      logSyncEvent('info', 'Emergency sync disabled');
+      return false;
+    }
+
+    if (this.syncInProgress) {
+      logSyncEvent('warn', 'Emergency sync skipped - sync already in progress');
+      return false;
+    }
+
+    try {
+      logSyncEvent('info', 'Emergency sync started');
+      
+      // Check if we have pending sync items
+      const hasPending = await this.hasPendingSync();
+      if (!hasPending) {
+        logSyncEvent('info', 'No pending sync items for emergency sync');
+        return true;
+      }
+
+      // If online, try immediate sync
+      if (this.isOnline) {
+        return await this.performEmergencySync();
+      }
+
+      // If offline, try beacon sync
+      if (config.emergency.beaconFallback) {
+        return await this.sendBeaconSync();
+      }
+
+      logSyncEvent('warn', 'Emergency sync failed - offline and beacon not available');
+      return false;
+    } catch (error) {
+      logSyncEvent('error', 'Emergency sync failed', error);
+      return false;
+    }
+  }
+
+  /**
+   * Check if there are pending sync operations
+   */
+  static async hasPendingSync(): Promise<boolean> {
+    try {
+      const [pendingSync, offlineQueue] = await Promise.all([
+        db.pendingSync.where('status').equals('pending').count(),
+        db.offlineQueue.where('status').equals('pending').count(),
+      ]);
+
+      return pendingSync > 0 || offlineQueue > 0;
+    } catch (error) {
+      logSyncEvent('error', 'Error checking pending sync', error);
+      return false;
+    }
+  }
+
+  /**
+   * Perform emergency sync with time constraints
+   */
+  private static async performEmergencySync(): Promise<boolean> {
+    const config = getSyncConfig();
+    const timeoutMs = config.emergency.maxWaitTimeMs;
+    
+    this.syncInProgress = true;
+    this.notifyListeners(this.syncStatus.syncing);
+
+    try {
+      // Create a promise that resolves with sync operation
+      const syncPromise = this.performFastSync();
+      
+      // Create a timeout promise
+      const timeoutPromise = new Promise<boolean>((resolve) => {
+        setTimeout(() => {
+          logSyncEvent('warn', `Emergency sync timeout after ${timeoutMs}ms`);
+          resolve(false);
+        }, timeoutMs);
+      });
+
+      // Race between sync and timeout
+      const result = await Promise.race([syncPromise, timeoutPromise]);
+      
+      this.notifyListeners(this.syncStatus.idle);
+      return result;
+    } catch (error) {
+      logSyncEvent('error', 'Emergency sync failed', error);
+      this.notifyListeners(this.syncStatus.error);
+      return false;
+    } finally {
+      this.syncInProgress = false;
+    }
+  }
+
+  /**
+   * Fast sync operation for emergency scenarios
+   */
+  private static async performFastSync(): Promise<boolean> {
+    try {
+      // Process only the most critical items first
+      await this.processUrgentOfflineQueue();
+      await this.processUrgentPendingSync();
+      
+      logSyncEvent('info', 'Emergency sync completed successfully');
+      return true;
+    } catch (error) {
+      logSyncEvent('error', 'Fast sync failed', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Process urgent offline queue items
+   */
+  private static async processUrgentOfflineQueue(): Promise<void> {
+    // Get only recent items (last 10 minutes) to avoid long operations
+    const recentThreshold = Date.now() - 10 * 60 * 1000;
+    const urgentItems = await db.offlineQueue
+      .where('status')
+      .equals('pending')
+      .filter(item => item.timestamp > recentThreshold)
+      .limit(10) // Limit to 10 items for emergency sync
+      .toArray();
+
+    for (const item of urgentItems) {
+      try {
+        await this.executeOfflineQueueItem(item);
+        await db.offlineQueue.update(item.id!, { status: 'completed' });
+      } catch (error) {
+        logSyncEvent('error', 'Emergency offline queue item failed', error);
+        // Continue with other items
+      }
+    }
+  }
+
+  /**
+   * Process urgent pending sync items
+   */
+  private static async processUrgentPendingSync(): Promise<void> {
+    // Get only recent items (last 10 minutes) to avoid long operations
+    const recentThreshold = Date.now() - 10 * 60 * 1000;
+    const urgentItems = await db.pendingSync
+      .where('status')
+      .equals('pending')
+      .filter(item => item.createdAt > recentThreshold)
+      .limit(10) // Limit to 10 items for emergency sync
+      .toArray();
+
+    for (const item of urgentItems) {
+      try {
+        await this.executeSyncItem(item);
+        await LocalStorageService.markSyncCompleted(item.id!);
+      } catch (error) {
+        logSyncEvent('error', 'Emergency pending sync item failed', error);
+        // Continue with other items
+      }
+    }
+  }
+
+  /**
+   * Send data using Beacon API for emergency sync
+   */
+  static async sendBeaconSync(): Promise<boolean> {
+    if (typeof navigator === 'undefined' || !navigator.sendBeacon) {
+      logSyncEvent('warn', 'Beacon API not supported');
+      return await this.fallbackFetchSync();
+    }
+
+    try {
+      // Get pending sync data
+      const syncData = await this.prepareSyncPayload();
+      
+      if (!syncData || syncData.length === 0) {
+        logSyncEvent('info', 'No data to beacon sync');
+        return true;
+      }
+
+      // Send via beacon
+      const payload = JSON.stringify(syncData);
+      const endpoint = '/api/emergency-sync';
+      const success = navigator.sendBeacon(endpoint, payload);
+
+      if (success) {
+        logSyncEvent('info', 'Beacon sync successful');
+        // Mark items as attempted (they will be processed by the server)
+        await this.markBeaconSyncAttempted(syncData);
+      } else {
+        logSyncEvent('warn', 'Beacon sync failed, trying fallback');
+        return await this.fallbackFetchSync();
+      }
+
+      return success;
+    } catch (error) {
+      logSyncEvent('error', 'Beacon sync error', error);
+      return await this.fallbackFetchSync();
+    }
+  }
+
+  /**
+   * Fallback to fetch with keepalive for emergency sync
+   */
+  private static async fallbackFetchSync(): Promise<boolean> {
+    try {
+      const syncData = await this.prepareSyncPayload();
+      
+      if (!syncData || syncData.length === 0) {
+        return true;
+      }
+
+      const payload = JSON.stringify(syncData);
+      const endpoint = '/api/emergency-sync';
+
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        body: payload,
+        keepalive: true,
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${this.getAuthToken()}`,
+        },
+      });
+
+      if (response.ok) {
+        logSyncEvent('info', 'Fallback fetch sync successful');
+        await this.markBeaconSyncAttempted(syncData);
+        return true;
+      } else {
+        logSyncEvent('error', `Fallback fetch sync failed: ${response.status}`);
+        return false;
+      }
+    } catch (error) {
+      logSyncEvent('error', 'Fallback fetch sync error', error);
+      return false;
+    }
+  }
+
+  /**
+   * Prepare sync payload for beacon/fetch transmission
+   */
+  private static async prepareSyncPayload(): Promise<any[]> {
+    const [pendingItems, offlineItems] = await Promise.all([
+      db.pendingSync.where('status').equals('pending').limit(10).toArray(),
+      db.offlineQueue.where('status').equals('pending').limit(10).toArray(),
+    ]);
+
+    const syncData = [];
+
+    // Add pending sync items
+    for (const item of pendingItems) {
+      syncData.push({
+        id: item.id,
+        type: 'pending_sync',
+        operation: item.operation,
+        recordId: item.recordId,
+        data: item.data,
+        tableName: item.tableName,
+      });
+    }
+
+    // Add offline queue items
+    for (const item of offlineItems) {
+      syncData.push({
+        id: item.id,
+        type: 'offline_queue',
+        operation: item.data?.operation,
+        recordId: item.data?.recordId,
+        data: item.data?.data,
+      });
+    }
+
+    return syncData;
+  }
+
+  /**
+   * Mark beacon sync items as attempted
+   */
+  private static async markBeaconSyncAttempted(syncData: any[]): Promise<void> {
+    for (const item of syncData) {
+      try {
+        if (item.type === 'pending_sync') {
+          await db.pendingSync.update(item.id, {
+            attempts: (await db.pendingSync.get(item.id))?.attempts || 0 + 1,
+            lastAttemptAt: Date.now(),
+          });
+        } else if (item.type === 'offline_queue') {
+          await db.offlineQueue.update(item.id, {
+            attempts: (await db.offlineQueue.get(item.id))?.attempts || 0 + 1,
+          });
+        }
+      } catch (error) {
+        logSyncEvent('error', 'Error marking beacon sync attempted', error);
+      }
+    }
+  }
+
+  /**
+   * Trigger emergency sync (public method for PageLifecycleService)
+   */
+  static triggerEmergencySync(): void {
+    // Use setTimeout to avoid blocking the calling thread
+    setTimeout(() => {
+      this.emergencySync().catch(error => {
+        logSyncEvent('error', 'Emergency sync trigger failed', error);
+      });
+    }, 0);
   }
 }
 

@@ -74,6 +74,22 @@ const withPWA = require('next-pwa')({
         },
       },
     },
+    // Emergency sync endpoint - NetworkFirst for immediate processing
+    {
+      urlPattern: /^https?.*\/api\/emergency-sync.*/,
+      handler: 'NetworkFirst',
+      options: {
+        cacheName: 'emergency-sync-cache',
+        networkTimeoutSeconds: 10,
+        expiration: {
+          maxEntries: 5,
+          maxAgeSeconds: 60, // 1 minute
+        },
+        cacheableResponse: {
+          statuses: [0, 200, 202], // Include 202 Accepted for async processing
+        },
+      },
+    },
     // Cache API routes with NetworkFirst (shorter cache time)
     {
       urlPattern: /^https?.*\/api\/.*/,
