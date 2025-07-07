@@ -34,26 +34,40 @@ export function OfflineProvider({ children }: OfflineProviderProps) {
     window.addEventListener('online', handleOnline);
     window.addEventListener('offline', handleOffline);
 
-    // Check for service worker registration (next-pwa handles this automatically)
-    if ('serviceWorker' in navigator) {
-      // Set initial status based on existing registration
-      navigator.serviceWorker.getRegistration()
-        .then((registration) => {
-          if (registration) {
-            if (registration.active) {
-              setServiceWorkerStatus('active');
-            } else if (registration.installing) {
-              setServiceWorkerStatus('installing');
-            } else if (registration.waiting) {
-              setServiceWorkerStatus('waiting');
-            }
-          }
-        })
-        .catch(() => {
-          setServiceWorkerStatus('error');
-        });
+    let timeoutId: NodeJS.Timeout | undefined;
+    let handleControllerChange: (() => void) | undefined;
 
-      // Wait for service worker to be ready
+    // Check for service worker support and status
+    if ('serviceWorker' in navigator) {
+      // Initial status check with a delay to allow registration to start
+      const checkServiceWorkerStatus = () => {
+        navigator.serviceWorker.getRegistration()
+          .then((registration) => {
+            if (registration) {
+              if (registration.active) {
+                setServiceWorkerStatus('active');
+              } else if (registration.waiting) {
+                setServiceWorkerStatus('waiting');
+              } else if (registration.installing) {
+                setServiceWorkerStatus('installing');
+              }
+            } else {
+              // No registration found yet, still waiting
+              setServiceWorkerStatus('installing');
+            }
+          })
+          .catch(() => {
+            setServiceWorkerStatus('error');
+          });
+      };
+
+      // Check immediately
+      checkServiceWorkerStatus();
+
+      // Check again after a short delay to catch registration that starts after component mount
+      timeoutId = setTimeout(checkServiceWorkerStatus, 1000);
+
+      // Listen for service worker ready event
       navigator.serviceWorker.ready
         .then(() => {
           setServiceWorkerStatus('active');
@@ -62,10 +76,12 @@ export function OfflineProvider({ children }: OfflineProviderProps) {
           setServiceWorkerStatus('error');
         });
 
-      // Listen for service worker state changes
-      navigator.serviceWorker.addEventListener('controllerchange', () => {
+      // Listen for controller changes (when service worker activates)
+      handleControllerChange = () => {
         setServiceWorkerStatus('active');
-      });
+      };
+
+      navigator.serviceWorker.addEventListener('controllerchange', handleControllerChange);
     } else {
       setServiceWorkerStatus('not_supported');
     }
@@ -87,6 +103,15 @@ export function OfflineProvider({ children }: OfflineProviderProps) {
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);
       window.removeEventListener('sw-background-sync', handleBackgroundSync);
+      
+      // Clean up service worker listeners and timeout
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+      }
+      if (handleControllerChange) {
+        navigator.serviceWorker?.removeEventListener('controllerchange', handleControllerChange);
+      }
+      
       unsubscribeSync();
       SyncService.cleanup();
     };

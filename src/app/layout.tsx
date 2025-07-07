@@ -5,6 +5,7 @@ import { PostHogProvider } from "./providers";
 import { ConvexClientProvider } from "@/providers/ConvexClientProvider";
 import { AuthProvider } from "@/contexts/AuthContext";
 import { OfflineProvider } from "@/components/providers/OfflineProvider";
+import { PWARegistration } from "@/components/providers/PWARegistration";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -40,6 +41,7 @@ export default function RootLayout({
             </AuthProvider>
           </ConvexClientProvider>
         </PostHogProvider>
+        <PWARegistration />
       </body>
     </html>
   );
