@@ -80,27 +80,45 @@ export class EncryptionService {
         };
       }
 
-      // Verify algorithm compatibility
-      if (encryptedData.algorithm !== 'AES-GCM') {
+      // Validate encrypted data structure and format
+      const validation = this.validateEncryptedData(encryptedData);
+      if (!validation.isValid) {
         return {
           data: '',
           success: false,
-          error: 'Unsupported encryption algorithm',
+          error: `Invalid encrypted data: ${validation.errors.join(', ')}`,
         };
       }
 
-      if (encryptedData.keyDerivation !== 'Argon2id') {
-        return {
-          data: '',
-          success: false,
-          error: 'Unsupported key derivation method',
-        };
-      }
+      // Parse encrypted data components with validation
+      let dataBuffer: ArrayBuffer;
+      let iv: Uint8Array;
+      let salt: Uint8Array;
 
-      // Parse encrypted data components
-      const dataBuffer = CryptoUtils.base64ToArrayBuffer(encryptedData.encryptedData);
-      const iv = CryptoUtils.base64ToUint8Array(encryptedData.iv);
-      const salt = CryptoUtils.base64ToUint8Array(encryptedData.salt);
+      try {
+        // Validate base64 strings before decoding
+        if (!CryptoUtils.validateBase64(encryptedData.encryptedData)) {
+          throw new EncryptionError('Invalid encrypted data format', 'INVALID_ENCRYPTED_DATA');
+        }
+        if (!CryptoUtils.validateBase64(encryptedData.iv)) {
+          throw new EncryptionError('Invalid IV format', 'INVALID_IV');
+        }
+        if (!CryptoUtils.validateBase64(encryptedData.salt)) {
+          throw new EncryptionError('Invalid salt format', 'INVALID_SALT');
+        }
+
+        dataBuffer = CryptoUtils.base64ToArrayBuffer(encryptedData.encryptedData);
+        iv = CryptoUtils.base64ToUint8Array(encryptedData.iv);
+        salt = CryptoUtils.base64ToUint8Array(encryptedData.salt);
+      } catch (error) {
+        if (error instanceof EncryptionError) {
+          throw error;
+        }
+        throw new EncryptionError(
+          `Failed to parse encrypted data: ${error instanceof Error ? error.message : 'Unknown error'}`,
+          'PARSING_FAILED'
+        );
+      }
 
       // Derive decryption key from password
       const key = await KeyDerivation.deriveKey({
@@ -167,6 +185,52 @@ export class EncryptionService {
         error: error instanceof Error ? error.message : 'Password change failed',
       };
     }
+  }
+
+  /**
+   * Validates encrypted data structure and base64 format
+   */
+  static validateEncryptedData(encryptedData: EncryptedData): {
+    isValid: boolean;
+    errors: string[];
+  } {
+    const errors: string[] = [];
+
+    // Check required fields
+    if (!encryptedData.encryptedData) {
+      errors.push('Missing encrypted data');
+    } else if (!CryptoUtils.validateBase64(encryptedData.encryptedData)) {
+      errors.push('Invalid encrypted data format');
+    }
+
+    if (!encryptedData.iv) {
+      errors.push('Missing initialization vector');
+    } else if (!CryptoUtils.validateBase64(encryptedData.iv)) {
+      errors.push('Invalid IV format');
+    }
+
+    if (!encryptedData.salt) {
+      errors.push('Missing salt');
+    } else if (!CryptoUtils.validateBase64(encryptedData.salt)) {
+      errors.push('Invalid salt format');
+    }
+
+    if (!encryptedData.algorithm) {
+      errors.push('Missing algorithm specification');
+    } else if (encryptedData.algorithm !== 'AES-GCM') {
+      errors.push('Unsupported algorithm');
+    }
+
+    if (!encryptedData.keyDerivation) {
+      errors.push('Missing key derivation method');
+    } else if (encryptedData.keyDerivation !== 'Argon2id') {
+      errors.push('Unsupported key derivation method');
+    }
+
+    return {
+      isValid: errors.length === 0,
+      errors,
+    };
   }
 
   /**

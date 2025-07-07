@@ -138,15 +138,87 @@ export class CryptoUtils {
   }
 
   /**
-   * Converts Base64 string back to ArrayBuffer
+   * Validates if a string is valid base64
+   */
+  static validateBase64(base64: string): boolean {
+    if (!base64 || typeof base64 !== 'string') {
+      return false;
+    }
+    
+    // Check for valid base64 characters only
+    const base64Regex = /^[A-Za-z0-9+/]*={0,2}$/;
+    if (!base64Regex.test(base64)) {
+      return false;
+    }
+    
+    // Check length is multiple of 4
+    if (base64.length % 4 !== 0) {
+      return false;
+    }
+    
+    return true;
+  }
+
+  /**
+   * Sanitizes a base64 string by removing invalid characters and ensuring proper padding
+   */
+  static sanitizeBase64(base64: string): string {
+    if (!base64 || typeof base64 !== 'string') {
+      throw new EncryptionError('Invalid base64 input', 'INVALID_BASE64');
+    }
+    
+    // Remove whitespace, line breaks, and other invalid characters
+    let sanitized = base64.replace(/[^A-Za-z0-9+/=]/g, '');
+    
+    // Ensure proper padding
+    const remainder = sanitized.length % 4;
+    if (remainder > 0) {
+      sanitized += '='.repeat(4 - remainder);
+    }
+    
+    return sanitized;
+  }
+
+  /**
+   * Converts Base64 string back to ArrayBuffer with validation
    */
   static base64ToArrayBuffer(base64: string): ArrayBuffer {
-    const binary = atob(base64);
-    const bytes = new Uint8Array(binary.length);
-    for (let i = 0; i < binary.length; i++) {
-      bytes[i] = binary.charCodeAt(i);
+    try {
+      // Sanitize the input first
+      const sanitized = this.sanitizeBase64(base64);
+      
+      // Validate the sanitized string
+      if (!this.validateBase64(sanitized)) {
+        throw new EncryptionError(
+          'Invalid base64 string format',
+          'INVALID_BASE64'
+        );
+      }
+      
+      const binary = atob(sanitized);
+      const bytes = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i++) {
+        bytes[i] = binary.charCodeAt(i);
+      }
+      return bytes.buffer;
+    } catch (error) {
+      if (error instanceof EncryptionError) {
+        throw error;
+      }
+      
+      // Handle specific atob errors
+      if (error instanceof DOMException && error.name === 'InvalidCharacterError') {
+        throw new EncryptionError(
+          'Base64 string contains invalid characters and cannot be decoded',
+          'INVALID_BASE64'
+        );
+      }
+      
+      throw new EncryptionError(
+        `Failed to decode base64 string: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        'BASE64_DECODE_FAILED'
+      );
     }
-    return bytes.buffer;
   }
 
   /**
@@ -159,7 +231,7 @@ export class CryptoUtils {
   }
 
   /**
-   * Converts Base64 string to Uint8Array
+   * Converts Base64 string to Uint8Array with validation
    */
   static base64ToUint8Array(base64: string): Uint8Array {
     return new Uint8Array(this.base64ToArrayBuffer(base64));

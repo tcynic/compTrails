@@ -93,7 +93,22 @@ export class KeyDerivation {
         } else if (loadError.message.includes('Imports argument must be present')) {
           console.error('WASM imports argument missing - WASM module loading issue');
           console.info('The application will use PBKDF2 as a secure fallback');
+        } else if (loadError.message.includes('atob') || loadError.message.includes('InvalidCharacterError')) {
+          console.error('Base64 decoding error during WASM loading - corrupt or invalid WASM data');
+          console.info('This may indicate corrupted argon2.wasm files in public/ directory');
+          console.info('The application will use PBKDF2 as a secure fallback');
+        } else if (loadError.message.includes('Failed to execute \'atob\' on \'Window\'')) {
+          console.error('Base64 decoding failed - argon2-browser WASM contains invalid base64 data');
+          console.info('Try clearing browser cache or re-deploying the application');
+          console.info('The application will use PBKDF2 as a secure fallback');
         }
+      }
+      
+      // Handle DOMException specifically for atob errors
+      if (loadError instanceof DOMException && loadError.name === 'InvalidCharacterError') {
+        console.error('InvalidCharacterError: Base64 decoding failed in argon2-browser');
+        console.info('This indicates corrupted WASM binary data or invalid base64 encoding');
+        console.info('The application will use PBKDF2 as a secure fallback');
       }
       
       console.info('Using enhanced PBKDF2 for key derivation (secure fallback)');
@@ -352,9 +367,18 @@ export class KeyDerivation {
         result.testResults.argon2 = { success: true, duration };
         console.log('✅ Argon2 test successful');
       } catch (error) {
+        let errorDetails = error instanceof Error ? error.message : 'Unknown error';
+        
+        // Add specific diagnostic information for base64 errors
+        if (error instanceof DOMException && error.name === 'InvalidCharacterError') {
+          errorDetails += ' (Base64 decoding error - likely corrupted WASM data)';
+        } else if (errorDetails.includes('atob')) {
+          errorDetails += ' (Base64 decoding error in argon2-browser)';
+        }
+        
         result.testResults.argon2 = { 
           success: false, 
-          error: error instanceof Error ? error.message : 'Unknown error' 
+          error: errorDetails
         };
         console.log('❌ Argon2 test failed:', error);
       }
