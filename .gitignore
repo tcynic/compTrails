@@ -283,10 +283,14 @@ Thumbs.db
 # Bundle analyzer
 .analyzerrc
 
-# PWA files
+# PWA files (next-pwa generated)
 **/icon-*
 workbox-*.js
 sw.js
+workbox-*.js.map
+sw.js.map
+worker-*.js
+worker-*.js.map
 
 # Sitemap
 sitemap.xml

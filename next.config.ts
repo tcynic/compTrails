@@ -5,6 +5,26 @@ const withBundleAnalyzer = require('@next/bundle-analyzer')({
   enabled: process.env.ANALYZE === 'true',
 });
 
+// PWA plugin setup
+const withPWA = require('next-pwa')({
+  dest: 'public',
+  disable: process.env.NODE_ENV === 'development',
+  register: true,
+  skipWaiting: true,
+  runtimeCaching: [
+    {
+      urlPattern: /^https?.*/,
+      handler: 'NetworkFirst',
+      options: {
+        cacheName: 'offlineCache',
+        expiration: {
+          maxEntries: 200,
+        },
+      },
+    },
+  ],
+});
+
 const nextConfig: NextConfig = {
   // Conditionally apply webpack config only for production builds
   // This prevents the Turbopack warning in development
@@ -27,35 +47,6 @@ const nextConfig: NextConfig = {
       // as it handles client/server boundaries differently
     },
   },
-
-  // Ensure service worker is available in production
-  async rewrites() {
-    return [
-      {
-        source: '/sw.js',
-        destination: '/sw.js',
-      },
-    ];
-  },
-
-  // Configure headers for service worker
-  async headers() {
-    return [
-      {
-        source: '/sw.js',
-        headers: [
-          {
-            key: 'Cache-Control',
-            value: 'public, max-age=0, must-revalidate',
-          },
-          {
-            key: 'Service-Worker-Allowed',
-            value: '/',
-          },
-        ],
-      },
-    ];
-  },
 };
 
-export default withBundleAnalyzer(nextConfig);
+export default withBundleAnalyzer(withPWA(nextConfig));

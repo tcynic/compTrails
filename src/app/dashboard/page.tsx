@@ -59,9 +59,11 @@ export default function DashboardPage() {
                 <div>
                   <div className="font-medium text-gray-600">Service Worker</div>
                   <div className="text-gray-600">
-                    {serviceWorkerStatus === 'activated' && '✅ Active'}
+                    {serviceWorkerStatus === 'active' && '✅ Active'}
                     {serviceWorkerStatus === 'installing' && '⏳ Installing'}
-                    {serviceWorkerStatus === 'unsupported' && '❌ Unsupported'}
+                    {serviceWorkerStatus === 'waiting' && '⏳ Waiting'}
+                    {serviceWorkerStatus === 'error' && '❌ Error'}
+                    {serviceWorkerStatus === 'not_supported' && '❌ Not Supported'}
                   </div>
                 </div>
               </div>

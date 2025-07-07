@@ -1,7 +1,7 @@
 'use client';
 
 import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
-import { ServiceWorkerManager, type ServiceWorkerStatus } from '@/lib/serviceWorker';
+import { type ServiceWorkerStatus } from '@/lib/db';
 import { SyncService, type SyncStatus } from '@/services/syncService';
 
 interface OfflineContextType {
@@ -34,14 +34,21 @@ export function OfflineProvider({ children }: OfflineProviderProps) {
     window.addEventListener('online', handleOnline);
     window.addEventListener('offline', handleOffline);
 
-    // Register service worker
-    ServiceWorkerManager.register();
+    // Check for service worker registration (next-pwa handles this automatically)
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.ready
+        .then(() => {
+          setServiceWorkerStatus('active');
+        })
+        .catch(() => {
+          setServiceWorkerStatus('error');
+        });
+    } else {
+      setServiceWorkerStatus('not_supported');
+    }
 
     // Initialize sync service
     SyncService.initialize();
-
-    // Setup service worker status listener
-    const unsubscribeServiceWorker = ServiceWorkerManager.addStatusListener(setServiceWorkerStatus);
 
     // Setup sync status listener
     const unsubscribeSync = SyncService.addSyncListener(setSyncStatus);
@@ -57,7 +64,6 @@ export function OfflineProvider({ children }: OfflineProviderProps) {
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);
       window.removeEventListener('sw-background-sync', handleBackgroundSync);
-      unsubscribeServiceWorker();
       unsubscribeSync();
       SyncService.cleanup();
     };
@@ -68,7 +74,11 @@ export function OfflineProvider({ children }: OfflineProviderProps) {
   };
 
   const clearCaches = async () => {
-    await ServiceWorkerManager.clearCaches();
+    // Clear caches using Cache API directly since next-pwa manages the service worker
+    if ('caches' in window) {
+      const cacheNames = await caches.keys();
+      await Promise.all(cacheNames.map(name => caches.delete(name)));
+    }
   };
 
   const value: OfflineContextType = {

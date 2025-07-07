@@ -20,9 +20,8 @@ export type {
   SyncStatus,
 } from './types';
 
-// Service Worker
-export { ServiceWorkerManager } from '@/lib/serviceWorker';
-export type { ServiceWorkerStatus } from '@/lib/serviceWorker';
+// Service Worker Status Type (for compatibility)
+export type ServiceWorkerStatus = 'installing' | 'waiting' | 'active' | 'error' | 'not_supported';
 
 // Providers
 export { OfflineProvider, useOffline } from '@/components/providers/OfflineProvider';
