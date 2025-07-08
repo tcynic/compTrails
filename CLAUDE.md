@@ -10,7 +10,7 @@ This is a **Total Compensation Calculator** web application - a privacy-first, l
 
 ### Frontend Architecture
 
-- **Framework**: Next.js 14 with App Router
+- **Framework**: Next.js 15 with App Router
 - **UI**: Tailwind CSS + Radix UI components
 - **State Management**: Zustand + Convex hooks
 - **Forms**: React Hook Form + Zod validation
@@ -79,7 +79,11 @@ npm run deploy:staging  # Deploy to staging environment
 npm run deploy:prod     # Deploy to production environment
 ```
 
-[... rest of the existing content remains unchanged ...]
+## Project Documentation
+
+- Refer to @context/initialPRD.md for the product design 
+- Refer to @deployment.md for any questions about deployment methods
+- Refer to @context/architecture.md for the architecture of the application
 
 **Document Version History**
 
@@ -90,3 +94,6 @@ npm run deploy:prod     # Deploy to production environment
 - v2.0 - Complete rewrite to reflect Phase 1 completion and current architecture (2025-01-03)
 - v2.1 - Updated to reflect production-ready status, added PostHog analytics details, PWA configuration, deployment setup, and implemented features documentation (2025-07-07)
 - v2.2 - Added Convex development note about using `npx convex dev` to push mutations (2024-02-22)
+- v2.3 - Added reference to initialPRD.md for product design documentation (2024-07-10)
+- v2.4 - Added reference to @deployment.md for deployment methods (2024-07-10)
+- v2.5 - Added reference to @context/architecture.md for application architecture (2024-07-11)
