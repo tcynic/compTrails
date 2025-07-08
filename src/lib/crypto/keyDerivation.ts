@@ -38,6 +38,31 @@ export class KeyDerivation {
     }
 
     try {
+      // Configure custom WASM loader to bypass argon2-browser's atob() issue
+      // This must be done before importing argon2-browser
+      (window as any).loadArgon2WasmBinary = async () => {
+        console.log('Loading Argon2 WASM using custom loader...');
+        
+        // Determine the correct path for the WASM file
+        const wasmPath = '/argon2.wasm';
+        
+        try {
+          const response = await fetch(wasmPath);
+          if (!response.ok) {
+            throw new Error(`Failed to fetch WASM file: ${response.status} ${response.statusText}`);
+          }
+          
+          const arrayBuffer = await response.arrayBuffer();
+          const wasmBinary = new Uint8Array(arrayBuffer);
+          
+          console.log('Argon2 WASM loaded successfully, size:', wasmBinary.length, 'bytes');
+          return wasmBinary;
+        } catch (fetchError) {
+          console.error('Failed to fetch WASM file:', fetchError);
+          throw new Error(`WASM loading failed: ${fetchError instanceof Error ? fetchError.message : 'Unknown error'}`);
+        }
+      };
+
       // Test if we can load the argon2-browser module
       console.log('Attempting to load argon2-browser module...');
       const argon2Module = await import('argon2-browser');
@@ -65,6 +90,9 @@ export class KeyDerivation {
         
         console.log('Argon2 test successful - using secure key derivation');
         
+        // Clean up the global loader function
+        delete (window as any).loadArgon2WasmBinary;
+        
         // Return working Argon2 wrapper
         return async (options: HashOptions) => {
           try {
@@ -85,6 +113,11 @@ export class KeyDerivation {
     } catch (loadError) {
       console.error('Failed to load or test Argon2:', loadError);
       
+      // Clean up the global loader function if it exists
+      if ((window as any).loadArgon2WasmBinary) {
+        delete (window as any).loadArgon2WasmBinary;
+      }
+      
       // Provide detailed error information for debugging
       if (loadError instanceof Error) {
         if (loadError.message.includes('WebAssembly.instantiate')) {
@@ -100,6 +133,9 @@ export class KeyDerivation {
         } else if (loadError.message.includes('Failed to execute \'atob\' on \'Window\'')) {
           console.error('Base64 decoding failed - argon2-browser WASM contains invalid base64 data');
           console.info('Try clearing browser cache or re-deploying the application');
+          console.info('The application will use PBKDF2 as a secure fallback');
+        } else if (loadError.message.includes('WASM loading failed')) {
+          console.error('Custom WASM loader failed - check if argon2.wasm is accessible in public directory');
           console.info('The application will use PBKDF2 as a secure fallback');
         }
       }
