@@ -3,6 +3,8 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import dynamic from 'next/dynamic';
+import { useQuery } from 'convex/react';
+import { api } from '../../../../convex/_generated/api';
 import { SummaryCard } from './SummaryCard';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -34,7 +36,7 @@ import type {
 import { format } from 'date-fns';
 
 interface DecryptedRecord {
-  id: number;
+  id: number | string; // Support both local storage (number) and Convex (string) IDs
   type: 'salary' | 'bonus' | 'equity';
   data: DecryptedSalaryData | DecryptedBonusData | DecryptedEquityData;
   createdAt: number;
@@ -50,6 +52,12 @@ export function DashboardOverview() {
   const { trackPageView } = useAnalytics();
   const router = useRouter();
 
+  // Fetch data from Convex
+  const convexRecords = useQuery(
+    api.compensationRecords.getCompensationRecords,
+    user ? { userId: user.id } : 'skip'
+  );
+
   const loadAllCompensationData = useCallback(async () => {
     if (!user) return;
     
@@ -58,54 +66,97 @@ export function DashboardOverview() {
       // Get user's master password from secure context
       if (!password) {
         console.warn('Password not available, cannot decrypt data');
+        setIsLoading(false);
         return;
       }
       
-      // Load all compensation types
-      const [salaries, bonuses, equity] = await Promise.all([
-        LocalStorageService.getCompensationRecords(user.id, 'salary'),
-        LocalStorageService.getCompensationRecords(user.id, 'bonus'),
-        LocalStorageService.getCompensationRecords(user.id, 'equity'),
-      ]);
-
-      // Decrypt all records
       const decryptedRecords: DecryptedRecord[] = [];
       
-      for (const record of [...salaries, ...bonuses, ...equity]) {
-        try {
-          const decryptionResult = await EncryptionService.decryptData(record.encryptedData, password);
-          if (decryptionResult.success) {
-            const data = JSON.parse(decryptionResult.data);
-            decryptedRecords.push({
-              id: record.id!,
-              type: record.type,
-              data,
-              createdAt: record.createdAt,
-              currency: record.currency,
-            });
+      // 1. Process Convex records first (primary source)
+      if (convexRecords && convexRecords.length > 0) {
+        console.log(`Loading ${convexRecords.length} records from Convex`);
+        
+        for (const record of convexRecords) {
+          try {
+            // Convert Convex encrypted data format to EncryptedData interface
+            const encryptedData = {
+              encryptedData: record.encryptedData.data,
+              iv: record.encryptedData.iv,
+              salt: record.encryptedData.salt,
+              algorithm: 'AES-GCM' as const,
+              keyDerivation: 'Argon2id' as const,
+            };
+            
+            const decryptionResult = await EncryptionService.decryptData(encryptedData, password);
+            if (decryptionResult.success) {
+              const data = JSON.parse(decryptionResult.data);
+              decryptedRecords.push({
+                id: record._id,
+                type: record.type,
+                data,
+                createdAt: record.createdAt,
+                currency: record.currency,
+              });
+            }
+          } catch (error) {
+            console.error('Failed to decrypt Convex record:', error);
           }
-        } catch (error) {
-          console.error('Failed to decrypt record:', error);
+        }
+      } else {
+        // 2. Fallback to local storage if no Convex data
+        console.log('No Convex data found, loading from local storage');
+        
+        const [salaries, bonuses, equity] = await Promise.all([
+          LocalStorageService.getCompensationRecords(user.id, 'salary'),
+          LocalStorageService.getCompensationRecords(user.id, 'bonus'),
+          LocalStorageService.getCompensationRecords(user.id, 'equity'),
+        ]);
+
+        for (const record of [...salaries, ...bonuses, ...equity]) {
+          try {
+            const decryptionResult = await EncryptionService.decryptData(record.encryptedData, password);
+            if (decryptionResult.success) {
+              const data = JSON.parse(decryptionResult.data);
+              decryptedRecords.push({
+                id: record.id!,
+                type: record.type,
+                data,
+                createdAt: record.createdAt,
+                currency: record.currency,
+              });
+            }
+          } catch (error) {
+            console.error('Failed to decrypt local record:', error);
+          }
         }
       }
 
       // Sort by creation date (newest first)
       decryptedRecords.sort((a, b) => b.createdAt - a.createdAt);
       setAllRecords(decryptedRecords);
+      
+      console.log(`Dashboard loaded ${decryptedRecords.length} total records`);
     } catch (error) {
       console.error('Error loading compensation data:', error);
     } finally {
       setIsLoading(false);
     }
-  }, [user, password]);
+  }, [user, password, convexRecords]);
 
   useEffect(() => {
-    loadAllCompensationData();
+    // Only load data when we have convexRecords result (even if empty) or if user/password changed
+    if (convexRecords !== undefined) {
+      loadAllCompensationData();
+    }
     
     // Track dashboard view
     trackPageView('dashboard_overview');
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loadAllCompensationData]); // trackPageView omitted to prevent rate limiting
+  }, [loadAllCompensationData, convexRecords]); // trackPageView omitted to prevent rate limiting
+
+  // Update loading state based on Convex query status
+  const isConvexLoading = convexRecords === undefined && user !== null;
+  const actuallyLoading = isLoading || isConvexLoading;
 
   // Calculate current salary
   const currentSalary = useMemo(() => {
@@ -275,8 +326,8 @@ export function DashboardOverview() {
           value={totalCompensation.amount > 0 ? formatCurrency(totalCompensation.amount, totalCompensation.currency) : 'N/A'}
           subtitle={totalCompensation.hasEquity ? 'Plus equity grants' : 'Annual base + YTD bonuses'}
           icon={<DollarSign className="h-5 w-5" />}
-          isLoading={isLoading}
-          isEmpty={totalCompensation.amount === 0 && !isLoading}
+          isLoading={actuallyLoading}
+          isEmpty={totalCompensation.amount === 0 && !actuallyLoading}
           emptyMessage="Add your first compensation data"
           action={totalCompensation.amount === 0 ? {
             label: 'Add Salary',
@@ -290,8 +341,8 @@ export function DashboardOverview() {
           value={currentSalary ? formatCurrency(currentSalary.amount, currentSalary.currency) : 'N/A'}
           subtitle={currentSalary ? `${currentSalary.title} at ${currentSalary.company}` : undefined}
           icon={<Building2 className="h-5 w-5" />}
-          isLoading={isLoading}
-          isEmpty={!currentSalary && !isLoading}
+          isLoading={actuallyLoading}
+          isEmpty={!currentSalary && !actuallyLoading}
           emptyMessage="No current salary on file"
           action={!currentSalary ? {
             label: 'Add Salary',
@@ -310,8 +361,8 @@ export function DashboardOverview() {
           }
           subtitle={ytdBonuses.count > 0 ? `${ytdBonuses.count} bonus${ytdBonuses.count > 1 ? 'es' : ''} this year` : undefined}
           icon={<Gift className="h-5 w-5" />}
-          isLoading={isLoading}
-          isEmpty={ytdBonuses.count === 0 && !isLoading}
+          isLoading={actuallyLoading}
+          isEmpty={ytdBonuses.count === 0 && !actuallyLoading}
           emptyMessage="No bonuses this year"
           action={ytdBonuses.count === 0 ? {
             label: 'Add Bonus',
@@ -328,8 +379,8 @@ export function DashboardOverview() {
             : undefined
           }
           icon={<TrendingUp className="h-5 w-5" />}
-          isLoading={isLoading}
-          isEmpty={equitySummary.count === 0 && !isLoading}
+          isLoading={actuallyLoading}
+          isEmpty={equitySummary.count === 0 && !actuallyLoading}
           emptyMessage="No equity grants on file"
           action={equitySummary.count === 0 ? {
             label: 'Add Equity',
@@ -347,7 +398,7 @@ export function DashboardOverview() {
           </CardTitle>
         </CardHeader>
         <CardContent>
-          {isLoading ? (
+          {actuallyLoading ? (
             <div className="space-y-3">
               {[...Array(3)].map((_, i) => (
                 <div key={i} className="flex justify-between items-center animate-pulse">
