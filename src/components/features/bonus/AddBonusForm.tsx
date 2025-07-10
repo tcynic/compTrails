@@ -12,6 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { bonusSchema, type BonusFormData, bonusTypeOptions, currencyOptions } from '@/lib/validations/bonus';
 import { useAuth } from '@/contexts/AuthContext';
+import { useSecurePassword } from '@/hooks/usePassword';
 import { EncryptionService } from '@/services/encryptionService';
 import { LocalStorageService } from '@/services/localStorageService';
 import { format } from 'date-fns';
@@ -25,6 +26,7 @@ interface AddBonusFormProps {
 export function AddBonusForm({ isOpen, onClose, onSuccess }: AddBonusFormProps) {
   const [isLoading, setIsLoading] = useState(false);
   const { user } = useAuth();
+  const getPassword = useSecurePassword;
   
   const form = useForm<BonusFormData>({
     resolver: zodResolver(bonusSchema),
@@ -45,8 +47,12 @@ export function AddBonusForm({ isOpen, onClose, onSuccess }: AddBonusFormProps) 
     
     setIsLoading(true);
     try {
-      // For now, we'll use a default password. In a real app, this would come from user authentication
-      const userPassword = 'default-password'; // TODO: Get from secure context
+      // Get user's master password from secure context
+      const userPassword = getPassword();
+      if (!userPassword) {
+        alert('Please authenticate to continue');
+        return;
+      }
       
       // Encrypt the sensitive data
       const encryptedData = await EncryptionService.encryptData(JSON.stringify(data), userPassword);

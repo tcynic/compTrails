@@ -6,6 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Badge } from '@/components/ui/badge';
 import { Edit, Trash2, MapPin, Calendar, DollarSign } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
+import { useSecurePassword } from '@/hooks/usePassword';
 import { LocalStorageService } from '@/services/localStorageService';
 import { EncryptionService } from '@/services/encryptionService';
 import { format } from 'date-fns';
@@ -26,6 +27,7 @@ export function SalaryList({ onEdit, onDelete, refreshTrigger }: SalaryListProps
   const [salaries, setSalaries] = useState<DecryptedSalaryRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const { user } = useAuth();
+  const password = useSecurePassword();
 
   const loadSalaries = useCallback(async () => {
     if (!user) return;
@@ -34,13 +36,16 @@ export function SalaryList({ onEdit, onDelete, refreshTrigger }: SalaryListProps
       setLoading(true);
       const records = await LocalStorageService.getCompensationRecords(user.id, 'salary');
       
-      // For now, we'll use a default password. In a real app, this would come from secure context
-      const userPassword = 'default-password'; // TODO: Get from secure context
+      // Get user's master password from secure context
+      if (!password) {
+        console.warn('Password not available, cannot decrypt data');
+        return;
+      }
       
       const decryptedRecords = await Promise.all(
         records.map(async (record) => {
           try {
-            const decryptResult = await EncryptionService.decryptData(record.encryptedData, userPassword);
+            const decryptResult = await EncryptionService.decryptData(record.encryptedData, password);
             if (decryptResult.success) {
               const decryptedData = JSON.parse(decryptResult.data) as DecryptedSalaryData;
               return { ...record, decryptedData };
@@ -61,7 +66,7 @@ export function SalaryList({ onEdit, onDelete, refreshTrigger }: SalaryListProps
     } finally {
       setLoading(false);
     }
-  }, [user]);
+  }, [user, password]);
 
   useEffect(() => {
     loadSalaries();

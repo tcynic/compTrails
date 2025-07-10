@@ -2,6 +2,7 @@
 
 import { createContext, useContext, useState, useEffect, useCallback, useMemo, ReactNode } from 'react';
 import { AnalyticsService } from '@/services/analyticsService';
+import { PasswordService } from '@/services/passwordService';
 
 interface User {
   id: string;
@@ -98,6 +99,9 @@ export function AuthProvider({ children }: AuthProviderProps) {
       if (response.ok) {
         // Reset analytics tracking
         AnalyticsService.reset();
+        
+        // Clear password session data
+        PasswordService.clearAllPasswordData();
         
         setAuthState(() => ({
           user: null,

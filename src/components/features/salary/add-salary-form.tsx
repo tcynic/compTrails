@@ -12,6 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { salarySchema, type SalaryFormData, currencyOptions } from '@/lib/validations/salary';
 import { useAuth } from '@/contexts/AuthContext';
+import { useSecurePassword } from '@/hooks/usePassword';
 import { EncryptionService } from '@/services/encryptionService';
 import { LocalStorageService } from '@/services/localStorageService';
 import { format } from 'date-fns';
@@ -31,6 +32,7 @@ interface AddSalaryFormProps {
 export function AddSalaryForm({ isOpen, onClose, onSuccess, editRecord }: AddSalaryFormProps) {
   const [isLoading, setIsLoading] = useState(false);
   const { user } = useAuth();
+  const getPassword = useSecurePassword;
   
   // Determine if we're in edit mode
   const isEditMode = !!editRecord;
@@ -86,8 +88,12 @@ export function AddSalaryForm({ isOpen, onClose, onSuccess, editRecord }: AddSal
     
     setIsLoading(true);
     try {
-      // For now, we'll use a default password. In a real app, this would come from user authentication
-      const userPassword = 'default-password'; // TODO: Get from secure context
+      // Get user's master password from secure context
+      const userPassword = getPassword();
+      if (!userPassword) {
+        alert('Please authenticate to continue');
+        return;
+      }
       
       // Encrypt the sensitive data
       const encryptedData = await EncryptionService.encryptData(JSON.stringify(data), userPassword);

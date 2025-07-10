@@ -11,6 +11,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Download, FileText, Database, Calendar, Filter } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
+import { useSecurePassword } from '@/hooks/usePassword';
 import { LocalStorageService } from '@/services/localStorageService';
 import { EncryptionService } from '@/services/encryptionService';
 import { CSVExporter, JSONExporter, exportUtils } from '@/utils/exporters';
@@ -41,6 +42,7 @@ export function ExportDialog({ isOpen, onClose, preselectedType = 'all' }: Expor
   const [selectedColumns, setSelectedColumns] = useState<string[]>([]);
   
   const { user } = useAuth();
+  const password = useSecurePassword();
 
   // Load all compensation data
   useEffect(() => {
@@ -49,7 +51,11 @@ export function ExportDialog({ isOpen, onClose, preselectedType = 'all' }: Expor
     const loadData = async () => {
       setIsLoading(true);
       try {
-        const userPassword = 'default-password'; // TODO: Get from secure context
+        // Get user's master password from secure context
+        if (!password) {
+          console.warn('Password not available, cannot decrypt data');
+          return;
+        }
         
         // Load all compensation types
         const [salaries, bonuses, equity] = await Promise.all([
@@ -63,7 +69,7 @@ export function ExportDialog({ isOpen, onClose, preselectedType = 'all' }: Expor
         
         for (const record of [...salaries, ...bonuses, ...equity]) {
           try {
-            const decryptionResult = await EncryptionService.decryptData(record.encryptedData, userPassword);
+            const decryptionResult = await EncryptionService.decryptData(record.encryptedData, password);
             if (decryptionResult.success) {
               const data = JSON.parse(decryptionResult.data);
               decryptedRecords.push({
@@ -90,7 +96,7 @@ export function ExportDialog({ isOpen, onClose, preselectedType = 'all' }: Expor
     };
 
     loadData();
-  }, [isOpen, user]);
+  }, [isOpen, user, password]);
 
   // Set default custom date range
   useEffect(() => {

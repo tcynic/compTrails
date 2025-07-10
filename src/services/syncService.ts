@@ -80,6 +80,8 @@ export class SyncService {
 
     this.syncInterval = setInterval(() => {
       if (this.isOnline && !this.syncInProgress) {
+        // Note: Periodic sync will not process pending items without user ID
+        // Pending items will be processed when user performs actions
         this.triggerSync();
       }
     }, 5 * 60 * 1000); // 5 minutes
@@ -88,7 +90,7 @@ export class SyncService {
   /**
    * Trigger a sync operation
    */
-  static async triggerSync(): Promise<void> {
+  static async triggerSync(userId?: string): Promise<void> {
     if (!this.isOnline || this.syncInProgress) {
       return;
     }
@@ -101,7 +103,7 @@ export class SyncService {
       await this.processOfflineQueue();
       
       // Then process pending sync items
-      await this.processPendingSync();
+      await this.processPendingSync(userId);
       
       this.notifyListeners(this.syncStatus.idle);
     } catch (error) {
@@ -209,10 +211,13 @@ export class SyncService {
   /**
    * Process pending sync items
    */
-  private static async processPendingSync(): Promise<void> {
-    // TODO: Get current user ID from auth context
-    const currentUserId = 'current-user'; // Placeholder
-    const pendingItems = await LocalStorageService.getPendingSyncItems(currentUserId);
+  private static async processPendingSync(userId?: string): Promise<void> {
+    if (!userId) {
+      console.warn('[SyncService] No user ID provided, skipping sync');
+      return;
+    }
+    
+    const pendingItems = await LocalStorageService.getPendingSyncItems(userId);
 
     console.log(`[SyncService] Processing ${pendingItems.length} pending sync items`);
 

@@ -19,6 +19,7 @@ import {
   vestingCliffOptions
 } from '@/lib/validations/equity';
 import { useAuth } from '@/contexts/AuthContext';
+import { useSecurePassword } from '@/hooks/usePassword';
 import { EncryptionService } from '@/services/encryptionService';
 import { LocalStorageService } from '@/services/localStorageService';
 import { format, addYears } from 'date-fns';
@@ -32,6 +33,7 @@ interface AddEquityFormProps {
 export function AddEquityForm({ isOpen, onClose, onSuccess }: AddEquityFormProps) {
   const [isLoading, setIsLoading] = useState(false);
   const { user } = useAuth();
+  const getPassword = useSecurePassword;
   
   const form = useForm<EquityFormData>({
     resolver: zodResolver(equitySchema),
@@ -65,8 +67,12 @@ export function AddEquityForm({ isOpen, onClose, onSuccess }: AddEquityFormProps
     
     setIsLoading(true);
     try {
-      // For now, we'll use a default password. In a real app, this would come from user authentication
-      const userPassword = 'default-password'; // TODO: Get from secure context
+      // Get user's master password from secure context
+      const userPassword = getPassword();
+      if (!userPassword) {
+        alert('Please authenticate to continue');
+        return;
+      }
       
       // Encrypt the sensitive data
       const encryptedData = await EncryptionService.encryptData(JSON.stringify(data), userPassword);

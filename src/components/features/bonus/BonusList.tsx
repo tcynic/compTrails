@@ -8,6 +8,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Plus, Search, Filter } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
+import { useSecurePassword } from '@/hooks/usePassword';
 import { LocalStorageService } from '@/services/localStorageService';
 import { EncryptionService } from '@/services/encryptionService';
 import { AddBonusForm } from './AddBonusForm';
@@ -22,6 +23,7 @@ export function BonusList() {
   const [filterType, setFilterType] = useState<string>('all');
   const [showAddForm, setShowAddForm] = useState(false);
   const { user } = useAuth();
+  const password = useSecurePassword();
 
   const loadBonuses = useCallback(async () => {
     if (!user) return;
@@ -29,12 +31,17 @@ export function BonusList() {
     setIsLoading(true);
     try {
       const records = await LocalStorageService.getCompensationRecords(user.id, 'bonus');
-      const userPassword = 'default-password'; // TODO: Get from secure context
+      
+      // Get user's master password from secure context
+      if (!password) {
+        console.warn('Password not available, cannot decrypt data');
+        return;
+      }
       
       const decryptedBonuses = await Promise.all(
         records.map(async (record) => {
           try {
-            const decryptionResult = await EncryptionService.decryptData(record.encryptedData, userPassword);
+            const decryptionResult = await EncryptionService.decryptData(record.encryptedData, password);
             if (!decryptionResult.success) {
               console.error('Failed to decrypt bonus record:', decryptionResult.error);
               return null;
@@ -54,7 +61,7 @@ export function BonusList() {
     } finally {
       setIsLoading(false);
     }
-  }, [user]);
+  }, [user, password]);
 
   useEffect(() => {
     loadBonuses();

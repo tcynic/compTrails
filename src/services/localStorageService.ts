@@ -37,7 +37,7 @@ export class LocalStorageService {
             currency: createdRecord.currency,
           };
           
-          await this.addToSyncQueue('create', 'compensationRecords', id, syncData);
+          await this.addToSyncQueue('create', 'compensationRecords', id, createdRecord.userId, syncData);
         }
       }
       
@@ -100,7 +100,7 @@ export class LocalStorageService {
           currency: updatedRecord.currency,
           version: updatedRecord.version,
         };
-        await this.addToSyncQueue('update', 'compensationRecords', id, syncData);
+        await this.addToSyncQueue('update', 'compensationRecords', id, updatedRecord.userId, syncData);
       }
     } catch (error) {
       throw new LocalStorageError(
@@ -115,10 +115,16 @@ export class LocalStorageService {
    */
   static async deleteCompensationRecord(id: number): Promise<void> {
     try {
+      // Get the record first to obtain userId
+      const record = await db.compensationRecords.get(id);
+      if (!record) {
+        throw new Error('Record not found');
+      }
+      
       await db.compensationRecords.delete(id);
       
       // Add to sync queue (no data needed for delete operation)
-      await this.addToSyncQueue('delete', 'compensationRecords', id);
+      await this.addToSyncQueue('delete', 'compensationRecords', id, record.userId);
     } catch (error) {
       throw new LocalStorageError(
         `Failed to delete compensation record: ${error instanceof Error ? error.message : 'Unknown error'}`,
@@ -134,6 +140,7 @@ export class LocalStorageService {
     operation: SyncOperation,
     tableName: string,
     recordId: number,
+    userId: string,
     data?: any
   ): Promise<void> {
     // Check for existing pending sync items for the same record and operation to prevent duplicates
@@ -176,7 +183,7 @@ export class LocalStorageService {
     }
 
     const syncItem: Omit<PendingSyncItem, 'id'> = {
-      userId: 'current-user', // TODO: Get from auth context
+      userId,
       createdAt: Date.now(),
       updatedAt: Date.now(),
       operation,
