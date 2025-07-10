@@ -159,9 +159,19 @@ export const processFMVUpdates = internalAction({
       
       for (const company of companiesNeedingUpdates) {
         try {
-          // Skip if no ticker (private company)
+          // Handle private companies (no ticker) differently
           if (!company.ticker) {
-            console.log(`Skipping ${company.companyName} - no ticker symbol`);
+            console.log(`Processing private company: ${company.companyName}`);
+            const privateCompanyResult = await ctx.runMutation(internal.fmvUpdates.processPrivateCompanyFMV, {
+              companyName: company.companyName,
+            });
+            
+            if (privateCompanyResult.updated) {
+              updatesProcessed++;
+              console.log(`Updated private company FMV for ${company.companyName}`);
+            } else {
+              console.log(`No FMV update needed for private company ${company.companyName}: ${privateCompanyResult.reason}`);
+            }
             continue;
           }
           
@@ -282,10 +292,9 @@ export const getCompaniesNeedingUpdates = internalQuery({
     }
     
     return Array.from(companiesMap.values())
-      .filter(record => record.ticker) // Only public companies with tickers
       .map(record => ({
         companyName: record.companyName,
-        ticker: record.ticker,
+        ticker: record.ticker, // Will be undefined for private companies
       }));
   },
 });
@@ -422,6 +431,321 @@ export const createFMVUpdateNotifications = internalMutation({
         updatedAt: Date.now(),
       });
     }
+  },
+});
+
+// Internal mutation to process private company FMV updates
+export const processPrivateCompanyFMV = internalMutation({
+  args: {
+    companyName: v.string(),
+  },
+  handler: async (ctx, args): Promise<{ updated: boolean; reason: string }> => {
+    try {
+      // Get the latest FMV record for this private company
+      const latestRecord = await ctx.db
+        .query('fmvHistory')
+        .withIndex('by_company_and_date', (q) => q.eq('companyName', args.companyName))
+        .order('desc')
+        .first();
+      
+      if (!latestRecord) {
+        return { updated: false, reason: 'No existing FMV records found' };
+      }
+      
+      // Check if we should attempt an estimation update
+      const now = Date.now();
+      const timeSinceUpdate = now - latestRecord.effectiveDate;
+      const daysSinceUpdate = timeSinceUpdate / (1000 * 60 * 60 * 24);
+      
+      // For private companies, only update if:
+      // 1. Last update was manual and older than 90 days
+      // 2. Last update was estimated and older than 30 days
+      // 3. Manual override is not recent (< 7 days)
+      
+      if (latestRecord.isManualOverride && daysSinceUpdate < 7) {
+        return { updated: false, reason: 'Recent manual override' };
+      }
+      
+      const shouldUpdate = 
+        (latestRecord.dataSource === 'manual' && daysSinceUpdate > 90) ||
+        (latestRecord.dataSource === 'estimated' && daysSinceUpdate > 30);
+      
+      if (!shouldUpdate) {
+        return { updated: false, reason: `Too recent (${daysSinceUpdate.toFixed(1)} days ago)` };
+      }
+      
+      // Try to generate an estimated FMV using available methods
+      const estimatedFMV = await generatePrivateCompanyEstimate(ctx, args.companyName, latestRecord);
+      
+      if (!estimatedFMV) {
+        return { updated: false, reason: 'Unable to generate estimate' };
+      }
+      
+      // Get users who have this company in their portfolio
+      const usersWithCompany = await ctx.db
+        .query('fmvHistory')
+        .withIndex('by_company_and_date', (q) => q.eq('companyName', args.companyName))
+        .collect();
+      
+      const uniqueUsers = [...new Set(usersWithCompany.map(record => record.userId))];
+      
+      // Create new estimated FMV record for each user
+      for (const userId of uniqueUsers) {
+        await ctx.db.insert('fmvHistory', {
+          userId,
+          companyName: args.companyName,
+          ticker: undefined,
+          fmv: estimatedFMV.value,
+          currency: 'USD',
+          effectiveDate: now,
+          dataSource: 'estimated' as const,
+          apiProvider: undefined,
+          confidence: estimatedFMV.confidence,
+          isManualOverride: false,
+          notes: estimatedFMV.methodology,
+          createdAt: now,
+          updatedAt: now,
+        });
+      }
+      
+      return { updated: true, reason: `Updated using ${estimatedFMV.methodology}` };
+      
+    } catch (error) {
+      console.error(`Error processing private company ${args.companyName}:`, error);
+      return { updated: false, reason: `Error: ${error instanceof Error ? error.message : 'Unknown error'}` };
+    }
+  },
+});
+
+// Helper function to generate private company FMV estimates
+async function generatePrivateCompanyEstimate(
+  ctx: any, 
+  companyName: string, 
+  latestRecord: any
+): Promise<{ value: number; confidence: number; methodology: string } | null> {
+  
+  // Method 1: Inflation adjustment of last known value
+  if (latestRecord.dataSource === 'manual') {
+    const now = Date.now();
+    const yearsElapsed = (now - latestRecord.effectiveDate) / (1000 * 60 * 60 * 24 * 365);
+    
+    // Apply conservative inflation rate of 3% annually
+    const inflationRate = 0.03;
+    const inflatedValue = latestRecord.fmv * Math.pow(1 + inflationRate, yearsElapsed);
+    
+    return {
+      value: Math.round(inflatedValue * 100) / 100,
+      confidence: Math.max(0.3, 0.8 - (yearsElapsed * 0.1)), // Confidence decreases over time
+      methodology: `Inflation-adjusted from manual entry (${yearsElapsed.toFixed(1)} years, ${(inflationRate * 100)}% annual rate)`
+    };
+  }
+  
+  // Method 2: Industry multiple estimation (placeholder for future implementation)
+  if (companyName.toLowerCase().includes('tech') || companyName.toLowerCase().includes('software')) {
+    // Tech companies often trade at higher multiples
+    const techMultiplier = 1.15;
+    const adjustedValue = latestRecord.fmv * techMultiplier;
+    
+    return {
+      value: Math.round(adjustedValue * 100) / 100,
+      confidence: 0.4,
+      methodology: 'Industry multiple estimation (tech sector +15%)'
+    };
+  }
+  
+  // Method 3: Conservative growth estimation
+  const years = (Date.now() - latestRecord.effectiveDate) / (1000 * 60 * 60 * 24 * 365);
+  if (years > 0.25) { // Only if it's been at least 3 months
+    const conservativeGrowthRate = 0.05; // 5% annual growth
+    const grownValue = latestRecord.fmv * Math.pow(1 + conservativeGrowthRate, years);
+    
+    return {
+      value: Math.round(grownValue * 100) / 100,
+      confidence: Math.max(0.25, 0.6 - (years * 0.05)),
+      methodology: `Conservative growth estimation (${(conservativeGrowthRate * 100)}% annual)`
+    };
+  }
+  
+  return null; // No estimation method available
+}
+
+// Create a manual FMV record for private companies
+export const createManualPrivateFMV = mutation({
+  args: {
+    userId: v.string(),
+    companyName: v.string(),
+    fmv: v.number(),
+    currency: v.string(),
+    effectiveDate: v.number(),
+    notes: v.optional(v.string()),
+    valuationMethod: v.optional(v.string()),
+    confidenceLevel: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const now = Date.now();
+    
+    return await ctx.db.insert('fmvHistory', {
+      userId: args.userId,
+      companyName: args.companyName,
+      ticker: undefined, // Private companies don't have tickers
+      fmv: args.fmv,
+      currency: args.currency,
+      effectiveDate: args.effectiveDate,
+      dataSource: 'manual' as const,
+      apiProvider: undefined,
+      confidence: args.confidenceLevel || 0.9, // High confidence for manual entries
+      isManualOverride: true,
+      notes: args.notes || `Manual entry${args.valuationMethod ? ` using ${args.valuationMethod}` : ''}`,
+      createdAt: now,
+      updatedAt: now,
+    });
+  },
+});
+
+// Get private company valuation suggestions
+export const getPrivateCompanyValuationSuggestions = query({
+  args: {
+    userId: v.string(),
+    companyName: v.string(),
+  },
+  handler: async (ctx, args) => {
+    // Get latest FMV record
+    const latestRecord = await ctx.db
+      .query('fmvHistory')
+      .withIndex('by_user_and_company', (q) => 
+        q.eq('userId', args.userId).eq('companyName', args.companyName)
+      )
+      .order('desc')
+      .first();
+    
+    if (!latestRecord) {
+      return {
+        suggestions: [],
+        message: 'No previous valuation data found. Consider starting with a manual entry.'
+      };
+    }
+    
+    const suggestions = [];
+    const now = Date.now();
+    const yearsElapsed = (now - latestRecord.effectiveDate) / (1000 * 60 * 60 * 24 * 365);
+    
+    // Inflation adjustment suggestion
+    if (yearsElapsed > 0.5) {
+      const inflatedValue = latestRecord.fmv * Math.pow(1.03, yearsElapsed);
+      suggestions.push({
+        method: 'Inflation Adjustment',
+        suggestedValue: Math.round(inflatedValue * 100) / 100,
+        confidence: Math.max(0.3, 0.8 - (yearsElapsed * 0.1)),
+        description: `Adjusts last known value for ${(3 * 100)}% annual inflation over ${yearsElapsed.toFixed(1)} years`,
+        recommended: yearsElapsed < 2
+      });
+    }
+    
+    // Growth estimation suggestion
+    if (yearsElapsed > 0.25) {
+      const growthValue = latestRecord.fmv * Math.pow(1.05, yearsElapsed);
+      suggestions.push({
+        method: 'Conservative Growth',
+        suggestedValue: Math.round(growthValue * 100) / 100,
+        confidence: Math.max(0.25, 0.6 - (yearsElapsed * 0.05)),
+        description: `Assumes ${(5 * 100)}% annual growth over ${yearsElapsed.toFixed(1)} years`,
+        recommended: yearsElapsed < 3
+      });
+    }
+    
+    // Industry multiple suggestion (basic implementation)
+    const industryMultiplier = args.companyName.toLowerCase().includes('tech') ? 1.15 : 1.05;
+    suggestions.push({
+      method: 'Industry Multiple',
+      suggestedValue: Math.round(latestRecord.fmv * industryMultiplier * 100) / 100,
+      confidence: 0.4,
+      description: `Industry-based valuation multiple (${((industryMultiplier - 1) * 100).toFixed(0)}% premium)`,
+      recommended: false
+    });
+    
+    return {
+      suggestions: suggestions.sort((a, b) => (b.confidence * (b.recommended ? 1.2 : 1)) - (a.confidence * (a.recommended ? 1.2 : 1))),
+      latestValue: latestRecord.fmv,
+      lastUpdated: latestRecord.effectiveDate,
+      dataSource: latestRecord.dataSource,
+      daysSinceUpdate: (now - latestRecord.effectiveDate) / (1000 * 60 * 60 * 24)
+    };
+  },
+});
+
+// Bulk update private company FMVs with validation
+export const bulkUpdatePrivateCompanyFMV = mutation({
+  args: {
+    userId: v.string(),
+    updates: v.array(v.object({
+      companyName: v.string(),
+      fmv: v.number(),
+      effectiveDate: v.number(),
+      notes: v.optional(v.string()),
+      valuationMethod: v.optional(v.string()),
+    })),
+  },
+  handler: async (ctx, args) => {
+    const now = Date.now();
+    const results = [];
+    
+    for (const update of args.updates) {
+      try {
+        // Validate that this is actually a private company
+        const existingRecords = await ctx.db
+          .query('fmvHistory')
+          .withIndex('by_user_and_company', (q) => 
+            q.eq('userId', args.userId).eq('companyName', update.companyName)
+          )
+          .collect();
+        
+        const hasPublicRecords = existingRecords.some(record => record.ticker);
+        if (hasPublicRecords) {
+          results.push({
+            companyName: update.companyName,
+            success: false,
+            error: 'Cannot manually update public company FMV'
+          });
+          continue;
+        }
+        
+        const recordId = await ctx.db.insert('fmvHistory', {
+          userId: args.userId,
+          companyName: update.companyName,
+          ticker: undefined,
+          fmv: update.fmv,
+          currency: 'USD',
+          effectiveDate: update.effectiveDate,
+          dataSource: 'manual' as const,
+          apiProvider: undefined,
+          confidence: 0.9,
+          isManualOverride: true,
+          notes: update.notes || `Bulk update${update.valuationMethod ? ` using ${update.valuationMethod}` : ''}`,
+          createdAt: now,
+          updatedAt: now,
+        });
+        
+        results.push({
+          companyName: update.companyName,
+          success: true,
+          recordId
+        });
+        
+      } catch (error) {
+        results.push({
+          companyName: update.companyName,
+          success: false,
+          error: error instanceof Error ? error.message : 'Unknown error'
+        });
+      }
+    }
+    
+    return {
+      totalUpdates: args.updates.length,
+      successful: results.filter(r => r.success).length,
+      failed: results.filter(r => !r.success).length,
+      results
+    };
   },
 });
 

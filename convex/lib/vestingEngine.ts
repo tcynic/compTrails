@@ -20,6 +20,7 @@ import {
   AccelerationEvent,
   EnrichedVestingEvent,
   FMVContext,
+  VestingType,
   isStockOption,
   isRSU,
   isESPP,
@@ -109,7 +110,7 @@ export class VestingEngine {
           error: error.message,
           calculationMetadata: {
             calculatedAt: Date.now(),
-            calculationMethod: 'failed',
+            calculationMethod: 'linear', // Default fallback for failed calculations
             parametersUsed: params,
             performanceMetrics: {
               calculationDuration: calculationTime,
@@ -178,7 +179,7 @@ export class VestingEngine {
   /**
    * Determines the appropriate calculation method
    */
-  private determineCalculationMethod(grant: DecryptedEquityGrant): string {
+  private determineCalculationMethod(grant: DecryptedEquityGrant): VestingType {
     if (isCustomVesting(grant)) {
       return 'custom';
     }

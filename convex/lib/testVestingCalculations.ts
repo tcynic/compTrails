@@ -453,7 +453,7 @@ export class VestingCalculationTester {
         this.assert(false, 'Should have thrown error for invalid dates');
       } catch (error) {
         this.assert(error instanceof VestingCalculationError, 'Should throw VestingCalculationError');
-        this.assert(error.code === 'INVALID_DATES', 'Should have correct error code');
+        this.assert((error as VestingCalculationError).code === 'INVALID_DATES', 'Should have correct error code');
       }
       
       return { errorHandled: true };

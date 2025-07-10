@@ -81,7 +81,7 @@ export const processVestingCalculations = internalMutation({
                   });
                   
                   const eventCounts = await Promise.all(eventPromises);
-                  return eventCounts.reduce((sum, count) => sum + count, 0);
+                  return eventCounts.reduce((sum: number, count: number) => sum + count, 0);
                   
                 } catch (grantError) {
                   const errorMsg = `Error processing grant ${grant._id}: ${grantError instanceof Error ? grantError.message : 'Unknown error'}`;
@@ -268,14 +268,13 @@ async function calculateVestingEvents(grant: any): Promise<VestingEventData[]> {
       });
       
       const timeoutPromise = new Promise<never>((_, reject) => {
-        setTimeout(() => {
-          const { VestingCalculationError } = import('./types/equity').then(({ VestingCalculationError }) => {
-            reject(new VestingCalculationError(
-              'Vesting calculation timed out',
-              'PERFORMANCE_TIMEOUT',
-              grant._id
-            ));
-          });
+        setTimeout(async () => {
+          const { VestingCalculationError } = await import('./types/equity');
+          reject(new VestingCalculationError(
+            'Vesting calculation timed out',
+            'PERFORMANCE_TIMEOUT',
+            grant._id
+          ));
         }, calculationTimeout);
       });
       
@@ -298,19 +297,16 @@ async function calculateVestingEvents(grant: any): Promise<VestingEventData[]> {
       // Convert to the expected format with additional validation
       const vestingEvents: VestingEventData[] = calculationResult.events.map((event, index) => {
         if (!event.vestingDate || !event.sharesVested || !event.grantType || !event.companyName) {
-          const { VestingCalculationError } = import('./types/equity').then(({ VestingCalculationError }) => {
-            throw new VestingCalculationError(
-              `Invalid vesting event at index ${index}`,
-              'CALCULATION_FAILED',
-              grant._id
-            );
-          });
+          throw new Error(`Invalid vesting event at index ${index} for grant ${grant._id}`);
         }
+        
+        // Convert 'other' equity type to 'NSO' as fallback for compatibility
+        const grantType = event.grantType === 'other' ? 'NSO' : event.grantType as 'ISO' | 'NSO' | 'RSU' | 'ESPP';
         
         return {
           vestingDate: event.vestingDate,
           sharesVested: event.sharesVested,
-          grantType: event.grantType,
+          grantType,
           companyName: event.companyName,
         };
       });
@@ -467,6 +463,7 @@ export function calculateVestingSchedule(
   
   return events;
 }
+
 
 // Mutation to manually trigger vesting calculations for a specific user
 export const triggerVestingCalculationForUser = mutation({
@@ -629,7 +626,7 @@ export const getVestingCalculationHealth = query({
       const recentVestingEvents = await ctx.db
         .query('vestingEvents')
         .withIndex('by_vesting_date', (q) => 
-          q.gte('calculatedAt', Date.now() - 24 * 60 * 60 * 1000) // Last 24 hours
+          q.gte('vestingDate', Date.now() - 24 * 60 * 60 * 1000) // Last 24 hours
         )
         .collect();
       
@@ -668,7 +665,7 @@ export const getVestingCalculationHealth = query({
           successRate: decryptionStats.successRate,
           recentErrors: decryptionStats.recentErrors.slice(0, 5), // Last 5 errors
         },
-        healthScore: this.calculateHealthScore(errorStats, decryptionStats, recentVestingEvents.length),
+        healthScore: calculateHealthScore(errorStats, decryptionStats, recentVestingEvents.length),
       };
       
     } catch (error) {
