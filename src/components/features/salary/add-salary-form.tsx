@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import React, { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Button } from '@/components/ui/button';
@@ -15,16 +15,25 @@ import { useAuth } from '@/contexts/AuthContext';
 import { EncryptionService } from '@/services/encryptionService';
 import { LocalStorageService } from '@/services/localStorageService';
 import { format } from 'date-fns';
+import type { DecryptedSalaryData, CompensationRecord } from '@/lib/db/types';
+
+interface DecryptedSalaryRecord extends CompensationRecord {
+  decryptedData: DecryptedSalaryData;
+}
 
 interface AddSalaryFormProps {
   isOpen: boolean;
   onClose: () => void;
   onSuccess: () => void;
+  editRecord?: DecryptedSalaryRecord; // Optional record to edit
 }
 
-export function AddSalaryForm({ isOpen, onClose, onSuccess }: AddSalaryFormProps) {
+export function AddSalaryForm({ isOpen, onClose, onSuccess, editRecord }: AddSalaryFormProps) {
   const [isLoading, setIsLoading] = useState(false);
   const { user } = useAuth();
+  
+  // Determine if we're in edit mode
+  const isEditMode = !!editRecord;
   
   const form = useForm<SalaryFormData>({
     resolver: zodResolver(salarySchema),
@@ -41,6 +50,37 @@ export function AddSalaryForm({ isOpen, onClose, onSuccess }: AddSalaryFormProps
     },
   });
 
+  // Pre-populate form when editing
+  React.useEffect(() => {
+    if (editRecord && isOpen) {
+      const data = editRecord.decryptedData;
+      form.reset({
+        company: data.company,
+        title: data.title,
+        location: data.location,
+        amount: data.amount,
+        currency: data.currency,
+        startDate: data.startDate,
+        endDate: data.endDate || '',
+        isCurrentPosition: data.isCurrentPosition,
+        notes: data.notes || '',
+      });
+    } else if (!editRecord && isOpen) {
+      // Reset to default values when opening in add mode
+      form.reset({
+        company: '',
+        title: '',
+        location: '',
+        amount: 0,
+        currency: 'USD',
+        startDate: format(new Date(), 'yyyy-MM-dd'),
+        endDate: '',
+        isCurrentPosition: true,
+        notes: '',
+      });
+    }
+  }, [editRecord, isOpen, form]);
+
   const onSubmit = async (data: SalaryFormData) => {
     if (!user) return;
     
@@ -52,23 +92,33 @@ export function AddSalaryForm({ isOpen, onClose, onSuccess }: AddSalaryFormProps
       // Encrypt the sensitive data
       const encryptedData = await EncryptionService.encryptData(JSON.stringify(data), userPassword);
       
-      // Store locally first (local-first architecture)
-      await LocalStorageService.addCompensationRecord({
-        userId: user.id,
-        type: 'salary',
-        encryptedData,
-        currency: data.currency,
-        createdAt: Date.now(),
-        updatedAt: Date.now(),
-        syncStatus: 'pending',
-        version: 1,
-      });
+      if (isEditMode && editRecord) {
+        // Update existing record
+        await LocalStorageService.updateCompensationRecord(editRecord.id!, {
+          encryptedData,
+          currency: data.currency,
+          updatedAt: Date.now(),
+          version: editRecord.version + 1,
+        });
+      } else {
+        // Create new record - Store locally first (local-first architecture)
+        await LocalStorageService.addCompensationRecord({
+          userId: user.id,
+          type: 'salary',
+          encryptedData,
+          currency: data.currency,
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+          syncStatus: 'pending',
+          version: 1,
+        });
+      }
 
       onSuccess();
       onClose();
       form.reset();
     } catch (error) {
-      console.error('Error saving salary:', error);
+      console.error(`Error ${isEditMode ? 'updating' : 'saving'} salary:`, error);
     } finally {
       setIsLoading(false);
     }
@@ -78,9 +128,12 @@ export function AddSalaryForm({ isOpen, onClose, onSuccess }: AddSalaryFormProps
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent className="max-w-2xl">
         <DialogHeader>
-          <DialogTitle>Add New Salary</DialogTitle>
+          <DialogTitle>{isEditMode ? 'Edit Salary' : 'Add New Salary'}</DialogTitle>
           <DialogDescription>
-            Record your salary information including base pay, currency, and effective dates.
+            {isEditMode 
+              ? 'Update your salary information including base pay, currency, and effective dates.'
+              : 'Record your salary information including base pay, currency, and effective dates.'
+            }
           </DialogDescription>
         </DialogHeader>
         
@@ -238,7 +291,10 @@ export function AddSalaryForm({ isOpen, onClose, onSuccess }: AddSalaryFormProps
               Cancel
             </Button>
             <Button type="submit" disabled={isLoading}>
-              {isLoading ? 'Saving...' : 'Save Salary'}
+              {isLoading 
+                ? (isEditMode ? 'Updating...' : 'Saving...') 
+                : (isEditMode ? 'Update Salary' : 'Save Salary')
+              }
             </Button>
           </DialogFooter>
         </form>

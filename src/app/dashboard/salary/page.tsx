@@ -17,6 +17,7 @@ import {
 import { LocalStorageService } from '@/services/localStorageService';
 import { AnalyticsService } from '@/services/analyticsService';
 import { Plus, Trash2 } from 'lucide-react';
+import type { CompensationRecord, DecryptedSalaryData } from '@/lib/db/types';
 
 // Lazy load heavy salary components
 const AddSalaryForm = dynamic(() => import('@/components/features/salary/add-salary-form').then(mod => ({ default: mod.AddSalaryForm })), {
@@ -27,10 +28,15 @@ const SalaryList = dynamic(() => import('@/components/features/salary/salary-lis
   loading: () => <div className="animate-pulse h-32 bg-gray-200 rounded-lg"></div>,
 });
 
+interface DecryptedSalaryRecord extends CompensationRecord {
+  decryptedData: DecryptedSalaryData;
+}
+
 export default function SalaryPage() {
   const [showAddForm, setShowAddForm] = useState(false);
+  const [editRecord, setEditRecord] = useState<DecryptedSalaryRecord | null>(null);
   const [refreshTrigger, setRefreshTrigger] = useState(0);
-  const [deleteRecord, setDeleteRecord] = useState<any>(null);
+  const [deleteRecord, setDeleteRecord] = useState<DecryptedSalaryRecord | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const { user, loading } = useAuth();
   const router = useRouter();
@@ -57,13 +63,22 @@ export default function SalaryPage() {
     setRefreshTrigger(prev => prev + 1);
   };
 
+  const handleEditSuccess = () => {
+    setEditRecord(null);
+    setRefreshTrigger(prev => prev + 1);
+  };
+
+  const handleEdit = (record: DecryptedSalaryRecord) => {
+    setEditRecord(record);
+  };
+
   const handleDeleteSalary = async () => {
     if (!deleteRecord || !user) return;
     
     setIsDeleting(true);
     try {
       // Delete from local storage (which handles sync queue)
-      await LocalStorageService.deleteCompensationRecord(deleteRecord.id);
+      await LocalStorageService.deleteCompensationRecord(deleteRecord.id!);
       
       // Track deletion analytics
       AnalyticsService.trackDataEvent({
@@ -106,10 +121,7 @@ export default function SalaryPage() {
 
         <SalaryList
           refreshTrigger={refreshTrigger}
-          onEdit={(record) => {
-            // TODO: Implement edit functionality
-            console.log('Edit salary:', record);
-          }}
+          onEdit={handleEdit}
           onDelete={(record) => {
             setDeleteRecord(record);
           }}
@@ -119,6 +131,13 @@ export default function SalaryPage() {
           isOpen={showAddForm}
           onClose={() => setShowAddForm(false)}
           onSuccess={handleAddSuccess}
+        />
+
+        <AddSalaryForm
+          isOpen={!!editRecord}
+          onClose={() => setEditRecord(null)}
+          onSuccess={handleEditSuccess}
+          editRecord={editRecord || undefined}
         />
 
         {/* Delete Confirmation Dialog */}
@@ -134,13 +153,13 @@ export default function SalaryPage() {
               <div className="py-4">
                 <div className="bg-gray-50 p-4 rounded-lg space-y-2">
                   <p className="text-sm text-gray-600">
-                    <span className="font-medium">Company:</span> {deleteRecord.company || 'N/A'}
+                    <span className="font-medium">Company:</span> {deleteRecord.decryptedData.company || 'N/A'}
                   </p>
                   <p className="text-sm text-gray-600">
-                    <span className="font-medium">Title:</span> {deleteRecord.title || 'N/A'}
+                    <span className="font-medium">Title:</span> {deleteRecord.decryptedData.title || 'N/A'}
                   </p>
                   <p className="text-sm text-gray-600">
-                    <span className="font-medium">Amount:</span> {deleteRecord.currency} {deleteRecord.amount?.toLocaleString() || 'N/A'}
+                    <span className="font-medium">Amount:</span> {deleteRecord.decryptedData.currency} {deleteRecord.decryptedData.amount?.toLocaleString() || 'N/A'}
                   </p>
                 </div>
               </div>
