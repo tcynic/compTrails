@@ -1,5 +1,6 @@
 import { mutation, query, internalMutation, internalQuery } from './_generated/server';
 import { v } from 'convex/values';
+import { internal } from './_generated/api';
 
 // Create a new FMV history record
 export const createFMVRecord = mutation({
@@ -134,11 +135,14 @@ export const processFMVUpdates = internalMutation({
             continue;
           }
           
-          // TODO: Integrate with actual FMV API
-          // For now, we'll create a mock update
-          const mockFMVResult = await simulateFMVAPICall(company.ticker);
+          // Call the real FMV API action
+          const fmvResult = await ctx.runAction(internal.actions.fmvApi.fetchFMV, {
+            ticker: company.ticker,
+            useCache: true,
+            forceFresh: false,
+          });
           
-          if (mockFMVResult.success) {
+          if (fmvResult.success) {
             // Create new FMV record for each user that has this company
             const usersWithCompany = await ctx.db
               .query('fmvHistory')
@@ -152,12 +156,12 @@ export const processFMVUpdates = internalMutation({
                 userId,
                 companyName: company.companyName,
                 ticker: company.ticker,
-                fmv: mockFMVResult.fmv!,
+                fmv: fmvResult.fmv!,
                 currency: 'USD',
                 effectiveDate: Date.now(),
                 dataSource: 'api' as const,
-                apiProvider: mockFMVResult.source,
-                confidence: mockFMVResult.confidence,
+                apiProvider: fmvResult.source,
+                confidence: fmvResult.confidence,
                 isManualOverride: false,
                 createdAt: Date.now(),
                 updatedAt: Date.now(),
@@ -165,20 +169,20 @@ export const processFMVUpdates = internalMutation({
             }
             
             updatesProcessed++;
-            console.log(`Updated FMV for ${company.companyName}: $${mockFMVResult.fmv}`);
+            console.log(`Updated FMV for ${company.companyName}: $${fmvResult.fmv}`);
             
             // Create notifications for significant price changes
-            if (mockFMVResult.success && mockFMVResult.fmv !== undefined) {
+            if (fmvResult.success && fmvResult.fmv !== undefined) {
               await createFMVUpdateNotifications(ctx, company, {
-                fmv: mockFMVResult.fmv,
-                source: mockFMVResult.source,
-                confidence: mockFMVResult.confidence,
+                fmv: fmvResult.fmv,
+                source: fmvResult.source,
+                confidence: fmvResult.confidence,
               });
             }
             
           } else {
-            console.error(`Failed to update FMV for ${company.companyName}: ${mockFMVResult.error}`);
-            errors.push(`${company.companyName}: ${mockFMVResult.error}`);
+            console.error(`Failed to update FMV for ${company.companyName}: ${fmvResult.error}`);
+            errors.push(`${company.companyName}: ${fmvResult.error}`);
           }
           
         } catch (companyError) {
@@ -277,37 +281,6 @@ async function shouldUpdateCompanyFMV(ctx: any, company: { companyName: string; 
   return false;
 }
 
-// Mock FMV API call (replace with actual API integration)
-async function simulateFMVAPICall(ticker: string): Promise<{
-  success: boolean;
-  fmv?: number;
-  source: string;
-  confidence: number;
-  error?: string;
-}> {
-  // Simulate API call delay
-  await new Promise(resolve => setTimeout(resolve, 100));
-  
-  // Mock response - in real implementation, this would call the FMV service
-  const mockPrices: Record<string, number> = {
-    'AAPL': 175.50,
-    'GOOGL': 135.25,
-    'MSFT': 378.20,
-    'TSLA': 245.80,
-    'META': 312.40,
-  };
-  
-  const baseFMV = mockPrices[ticker] || 100 + Math.random() * 200;
-  const variation = (Math.random() - 0.5) * 0.1; // ±5% variation
-  const fmv = baseFMV * (1 + variation);
-  
-  return {
-    success: true,
-    fmv: Math.round(fmv * 100) / 100, // Round to 2 decimal places
-    source: 'mock_api',
-    confidence: 0.85,
-  };
-}
 
 // Helper function to create FMV update notifications
 async function createFMVUpdateNotifications(

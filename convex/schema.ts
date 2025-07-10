@@ -155,4 +155,28 @@ export default defineSchema({
     updatedAt: v.number(),
   })
     .index("by_user", ["userId"]),
+
+  // FMV cache table for reducing API calls
+  fmvCache: defineTable({
+    ticker: v.string(),
+    fmv: v.number(),
+    source: v.string(),
+    confidence: v.number(),
+    cachedAt: v.number(),
+    expiresAt: v.number(),
+    hits: v.number(), // Track cache hits for analytics
+  })
+    .index("by_ticker", ["ticker"])
+    .index("by_expires", ["expiresAt"]),
+
+  // FMV API rate limiting table
+  fmvRateLimits: defineTable({
+    provider: v.string(),
+    timestamp: v.number(),
+    success: v.boolean(),
+    responseTime: v.optional(v.number()), // Track API response times
+  })
+    .index("by_provider", ["provider"])
+    .index("by_timestamp", ["timestamp"])
+    .index("by_provider_and_time", ["provider", "timestamp"]),
 });
