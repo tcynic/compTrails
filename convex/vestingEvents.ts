@@ -118,7 +118,7 @@ export const getUpcomingVestingEvents = query({
     
     return await ctx.db
       .query('vestingEvents')
-      .withIndex('by_upcoming_vests', (q) => 
+      .withIndex('by_upcoming_vests', (q: any) => 
         q.eq('userId', args.userId)
          .gte('vestingDate', now)
          .lte('vestingDate', futureDate)

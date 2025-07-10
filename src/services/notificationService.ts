@@ -3,8 +3,7 @@ import type {
   NotificationType, 
   DeliveryMethod, 
   VestingEvent,
-  NotificationSettings,
-  EnhancedUserPreferences 
+  NotificationSettings
 } from '@/lib/db/types';
 import { format } from 'date-fns';
 
@@ -193,7 +192,7 @@ Your Compensation Tracker
             message: template.message,
             scheduledFor: reminderDate.getTime(),
             deliveryMethods,
-            relatedEntityId: event.id,
+            relatedEntityId: event.id?.toString(),
             relatedEntityType: 'vesting_event',
           });
         }

@@ -166,7 +166,7 @@ export const getUpcomingVestingEvents = query({
     
     return await ctx.db
       .query('vestingEvents')
-      .withIndex('by_upcoming_vests', (q) => 
+      .withIndex('by_upcoming_vests', (q: any) => 
         q.eq('userId', args.userId)
          .gte('vestingDate', now)
          .lte('vestingDate', futureDate)
@@ -204,7 +204,7 @@ export const getEquityGrantsForCalculation = internalQuery({
   handler: async (ctx) => {
     return await ctx.db
       .query('compensationRecords')
-      .withIndex('by_user_and_type', (q) => q.eq('type', 'equity'))
+      .filter((q) => q.eq(q.field('type'), 'equity'))
       .collect();
   },
 });

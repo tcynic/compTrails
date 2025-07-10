@@ -327,13 +327,16 @@ export const getNotificationStats = query({
     endDate: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
-    let query = ctx.db.query('notifications');
+    let notifications;
     
     if (args.userId) {
-      query = query.withIndex('by_user', (q) => q.eq('userId', args.userId));
+      notifications = await ctx.db
+        .query('notifications')
+        .withIndex('by_user', (q: any) => q.eq('userId', args.userId))
+        .collect();
+    } else {
+      notifications = await ctx.db.query('notifications').collect();
     }
-    
-    let notifications = await query.collect();
     
     // Filter by date range if provided
     if (args.startDate && args.endDate) {

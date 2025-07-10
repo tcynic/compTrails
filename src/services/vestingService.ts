@@ -1,6 +1,5 @@
 import { addMonths, startOfDay, isAfter, isBefore, differenceInMonths, format } from 'date-fns';
 import type { 
-  VestingSchedule, 
   VestingCalculationResult, 
   VestingEvent, 
   DecryptedEquityData,
@@ -67,7 +66,7 @@ export class VestingService {
     companyName: string;
   }): VestingEvent[] {
     const {
-      grantDate,
+      grantDate: _grantDate,
       vestingStart,
       vestingCliff = 0,
       vestingPeriod,
@@ -77,6 +76,8 @@ export class VestingService {
       grantType,
       companyName,
     } = params;
+    
+    // _grantDate is destructured but not used in calculation (vestingStart is used instead)
 
     const events: VestingEvent[] = [];
 
@@ -107,7 +108,7 @@ export class VestingService {
 
       // Create vesting event
       events.push({
-        id: `${equityGrantId}_${periodIndex}`, // Temporary ID for client-side use
+        id: Date.now() + periodIndex, // Temporary ID for client-side use
         userId: '', // Will be set when saving to database
         equityGrantId,
         vestingDate: startOfDay(currentDate).getTime(),
@@ -203,7 +204,7 @@ export class VestingService {
     const vestedEvents = events.filter(event => event.processed);
     const totalShares = vestedEvents.reduce((sum, event) => sum + event.sharesVested, 0);
 
-    let totalValue = totalShares * currentFMV;
+    const totalValue = totalShares * currentFMV;
     let unrealizedGain = totalValue;
 
     // For options, subtract the strike price
@@ -339,7 +340,7 @@ export class VestingService {
     totalTaxableIncome: number;
   } {
     let ordinaryIncome = 0;
-    let capitalGain = 0;
+    const capitalGain = 0;
 
     switch (grantType) {
       case 'RSU':

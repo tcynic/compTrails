@@ -1,6 +1,4 @@
 import type { 
-  FMVHistoryRecord, 
-  FMVAPIResponse, 
   FMVDataSource 
 } from '@/lib/db/types';
 
@@ -157,7 +155,7 @@ export class FMVService {
     }
 
     const price = parseFloat(quote['05. price']);
-    const changePercent = parseFloat(quote['10. change percent'].replace('%', ''));
+    // const changePercent = parseFloat(quote['10. change percent'].replace('%', ''));
 
     return {
       success: true,
@@ -436,7 +434,7 @@ export class FMVService {
     companyName: string,
     lastKnownValuation?: number,
     lastKnownDate?: Date,
-    fundingRounds?: Array<{ date: Date; valuation: number }>
+    ..._args: any[]
   ): FMVUpdateResult {
     // This is a placeholder for private company valuation
     // In a real implementation, this would use more sophisticated methods
