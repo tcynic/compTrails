@@ -88,6 +88,19 @@ export const fetchFMV = internalAction({
       // Check rate limit
       const rateLimitCheck = await checkRateLimit(ctx, provider);
       if (!rateLimitCheck.allowed) {
+        // Create monitoring alert for rate limit
+        await ctx.runMutation(internal.fmvMonitoring.createFMVAlert, {
+          type: 'rate_limit',
+          severity: 'medium',
+          provider,
+          message: `Rate limit exceeded for ${provider}: ${rateLimitCheck.reason}`,
+          metadata: {
+            ticker,
+            responseTime: undefined,
+            errorCode: 'RATE_LIMIT_EXCEEDED',
+          },
+        });
+        
         // If rate limited, try fallback providers
         if (process.env.FMV_ENABLE_FALLBACK === 'true') {
           return await fetchWithFallback(ctx, ticker, [provider]);
@@ -123,6 +136,21 @@ export const fetchFMV = internalAction({
 
       const responseTime = Date.now() - startTime;
       
+      // Create alert for slow responses (>5 seconds)
+      if (responseTime > 5000) {
+        await ctx.runMutation(internal.fmvMonitoring.createFMVAlert, {
+          type: 'timeout',
+          severity: 'medium',
+          provider,
+          message: `Slow response from ${provider} for ${ticker}: ${responseTime}ms`,
+          metadata: {
+            ticker,
+            responseTime,
+            errorCode: 'SLOW_RESPONSE',
+          },
+        });
+      }
+      
       // Track the API call
       await trackApiCall(ctx, provider, result.success, responseTime);
 
@@ -135,6 +163,18 @@ export const fetchFMV = internalAction({
 
     } catch (error) {
       console.error(`Error fetching FMV for ${ticker} from ${provider}:`, error);
+      
+      // Create monitoring alert for API failure
+      await ctx.runMutation(internal.fmvMonitoring.createFMVAlert, {
+        type: 'api_failure',
+        severity: 'high',
+        provider,
+        message: `API failure for ${provider} when fetching ${ticker}: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        metadata: {
+          ticker,
+          errorCode: 'API_FAILURE',
+        },
+      });
       
       // Try fallback if enabled
       if (process.env.FMV_ENABLE_FALLBACK === 'true') {

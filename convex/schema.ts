@@ -179,4 +179,43 @@ export default defineSchema({
     .index("by_provider", ["provider"])
     .index("by_timestamp", ["timestamp"])
     .index("by_provider_and_time", ["provider", "timestamp"]),
+
+  // FMV Monitoring and Alerting
+  fmvAlerts: defineTable({
+    type: v.union(
+      v.literal('rate_limit'),
+      v.literal('api_failure'), 
+      v.literal('cache_miss'),
+      v.literal('timeout'),
+      v.literal('circuit_breaker')
+    ),
+    severity: v.union(
+      v.literal('low'),
+      v.literal('medium'), 
+      v.literal('high'),
+      v.literal('critical')
+    ),
+    provider: v.string(),
+    message: v.string(),
+    metadata: v.optional(v.object({
+      ticker: v.optional(v.string()),
+      responseTime: v.optional(v.number()),
+      errorCode: v.optional(v.string()),
+      retryCount: v.optional(v.number()),
+      alertCount: v.optional(v.number()),
+      timeWindow: v.optional(v.string()),
+      triggerType: v.optional(v.string()),
+    })),
+    timestamp: v.number(),
+    acknowledged: v.boolean(),
+    acknowledgedBy: v.optional(v.string()),
+    acknowledgedAt: v.optional(v.number()),
+    acknowledgedNotes: v.optional(v.string()),
+    createdAt: v.number(),
+  })
+    .index("by_timestamp", ["timestamp"])
+    .index("by_acknowledged", ["acknowledged"])
+    .index("by_severity", ["severity"])
+    .index("by_provider", ["provider"])
+    .index("by_type", ["type"]),
 });

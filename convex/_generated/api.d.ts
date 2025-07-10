@@ -17,6 +17,7 @@ import type * as compensationRecords from "../compensationRecords.js";
 import type * as crons from "../crons.js";
 import type * as fmvApi from "../fmvApi.js";
 import type * as fmvCache from "../fmvCache.js";
+import type * as fmvMonitoring from "../fmvMonitoring.js";
 import type * as fmvRateLimit from "../fmvRateLimit.js";
 import type * as fmvUpdates from "../fmvUpdates.js";
 import type * as lib_batchProcessor from "../lib/batchProcessor.js";
@@ -44,6 +45,7 @@ declare const fullApi: ApiFromModules<{
   crons: typeof crons;
   fmvApi: typeof fmvApi;
   fmvCache: typeof fmvCache;
+  fmvMonitoring: typeof fmvMonitoring;
   fmvRateLimit: typeof fmvRateLimit;
   fmvUpdates: typeof fmvUpdates;
   "lib/batchProcessor": typeof lib_batchProcessor;
