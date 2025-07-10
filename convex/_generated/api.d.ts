@@ -19,6 +19,7 @@ import type * as fmvApi from "../fmvApi.js";
 import type * as fmvCache from "../fmvCache.js";
 import type * as fmvMonitoring from "../fmvMonitoring.js";
 import type * as fmvRateLimit from "../fmvRateLimit.js";
+import type * as fmvTests from "../fmvTests.js";
 import type * as fmvUpdates from "../fmvUpdates.js";
 import type * as lib_batchProcessor from "../lib/batchProcessor.js";
 import type * as lib_errorHandling from "../lib/errorHandling.js";
@@ -47,6 +48,7 @@ declare const fullApi: ApiFromModules<{
   fmvCache: typeof fmvCache;
   fmvMonitoring: typeof fmvMonitoring;
   fmvRateLimit: typeof fmvRateLimit;
+  fmvTests: typeof fmvTests;
   fmvUpdates: typeof fmvUpdates;
   "lib/batchProcessor": typeof lib_batchProcessor;
   "lib/errorHandling": typeof lib_errorHandling;
