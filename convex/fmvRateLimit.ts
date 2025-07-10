@@ -5,7 +5,7 @@
  * exceeding quotas and ensure fair usage.
  */
 
-import { internalMutation, query } from '../_generated/server';
+import { internalMutation, query } from './_generated/server';
 import { v } from 'convex/values';
 
 // Rate limit window types
@@ -248,7 +248,7 @@ async function cleanupOldEntries(ctx: any, provider: string) {
   
   const oldEntries = await ctx.db
     .query('fmvRateLimits')
-    .withIndex('by_provider_and_time', (q) => 
+    .withIndex('by_provider_and_time', (q: any) => 
       q.eq('provider', provider).lt('timestamp', dayAgo)
     )
     .collect();
@@ -257,7 +257,7 @@ async function cleanupOldEntries(ctx: any, provider: string) {
   const batchSize = 100;
   for (let i = 0; i < oldEntries.length; i += batchSize) {
     const batch = oldEntries.slice(i, i + batchSize);
-    await Promise.all(batch.map(entry => ctx.db.delete(entry._id)));
+    await Promise.all(batch.map((entry: any) => ctx.db.delete(entry._id)));
   }
 }
 

@@ -409,7 +409,7 @@ export class VestingCalculationTester {
         this.assert(false, 'Should have thrown error for invalid grant');
       } catch (error) {
         this.assert(error instanceof VestingCalculationError, 'Should throw VestingCalculationError');
-        this.assert(error.code === 'INVALID_GRANT_DATA', 'Should have correct error code');
+        this.assert((error as VestingCalculationError).code === 'INVALID_GRANT_DATA', 'Should have correct error code');
       }
       
       return { errorHandled: true };
@@ -431,7 +431,7 @@ export class VestingCalculationTester {
         this.assert(false, 'Should have thrown error for incomplete grant');
       } catch (error) {
         this.assert(error instanceof VestingCalculationError, 'Should throw VestingCalculationError');
-        this.assert(error.code === 'MISSING_PARAMETERS', 'Should have correct error code');
+        this.assert((error as VestingCalculationError).code === 'MISSING_PARAMETERS', 'Should have correct error code');
       }
       
       return { errorHandled: true };

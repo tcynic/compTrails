@@ -5,10 +5,9 @@
  * with fallback support, rate limiting, and caching.
  */
 
-import { action } from '../_generated/server';
+import { action, internalAction } from './_generated/server';
 import { v } from 'convex/values';
-import { internal } from '../_generated/api';
-import { api } from '../_generated/api';
+import { internal } from './_generated/api';
 
 export interface FMVProvider {
   name: string;
@@ -59,9 +58,9 @@ const PROVIDERS: Record<string, FMVProvider> = {
 };
 
 /**
- * Main action to fetch FMV data with fallback support
+ * Main internal action to fetch FMV data with fallback support
  */
-export const fetchFMV = action({
+export const fetchFMV = internalAction({
   args: {
     ticker: v.string(),
     provider: v.optional(v.string()),
@@ -170,7 +169,7 @@ async function fetchFromYahoo(ticker: string): Promise<FMVResult> {
       throw new Error(`HTTP ${response.status}: ${response.statusText}`);
     }
 
-    const data = await response.json();
+    const data = await response.json() as any;
 
     if (data.chart?.error) {
       throw new Error(data.chart.error.description || 'Yahoo Finance API error');
@@ -218,7 +217,7 @@ async function fetchFromAlphaVantage(ticker: string): Promise<FMVResult> {
   
   try {
     const response = await fetch(url);
-    const data = await response.json();
+    const data = await response.json() as any;
 
     if (data['Error Message']) {
       throw new Error(data['Error Message']);
@@ -269,7 +268,7 @@ async function fetchFromFinnhub(ticker: string): Promise<FMVResult> {
   
   try {
     const response = await fetch(url);
-    const data = await response.json();
+    const data = await response.json() as any;
 
     if (data.error) {
       throw new Error(data.error);
@@ -307,19 +306,32 @@ async function fetchWithFallback(
     try {
       console.log(`Trying fallback provider: ${provider}`);
       
-      const result = await ctx.runAction(internal.actions.fmvApi.fetchFMV, {
-        ticker,
-        provider,
-        useCache: true,
-        forceFresh: false,
-      });
+      // Use direct function call instead of runAction to avoid circular reference
+      let result: FMVResult;
+      
+      switch (provider) {
+        case 'yahoo':
+          result = await fetchFromYahoo(ticker);
+          break;
+        case 'alphavantage':
+          result = await fetchFromAlphaVantage(ticker);
+          break;
+        case 'finnhub':
+          result = await fetchFromFinnhub(ticker);
+          break;
+        default:
+          continue;
+      }
 
       if (result.success) {
+        // Track the successful fallback call
+        await trackApiCall(ctx, provider, true);
         return result;
       }
 
     } catch (error) {
       console.error(`Fallback provider ${provider} failed:`, error);
+      await trackApiCall(ctx, provider, false);
       continue;
     }
   }
@@ -338,8 +350,32 @@ async function fetchWithFallback(
  */
 async function checkCache(ctx: any, ticker: string): Promise<FMVResult | null> {
   try {
-    const cached = await ctx.runMutation(internal.lib.fmvCache.getCachedFMV, { ticker });
-    return cached;
+    const now = Date.now();
+    
+    // Look for cache entry
+    const cached = await ctx.db
+      .query('fmvCache')
+      .withIndex('by_ticker', (q: any) => q.eq('ticker', ticker))
+      .filter((q: any) => q.gt(q.field('expiresAt'), now))
+      .first();
+    
+    if (!cached) {
+      return null;
+    }
+    
+    // Increment hit counter
+    await ctx.db.patch(cached._id, {
+      hits: cached.hits + 1,
+    });
+    
+    return {
+      success: true,
+      fmv: cached.fmv,
+      source: cached.source,
+      confidence: cached.confidence,
+      timestamp: cached.cachedAt,
+      cached: true,
+    } as FMVResult;
   } catch (error) {
     console.error('Error checking cache:', error);
     return null;
@@ -351,15 +387,43 @@ async function checkCache(ctx: any, ticker: string): Promise<FMVResult | null> {
  */
 async function cacheResult(ctx: any, ticker: string, result: FMVResult): Promise<void> {
   try {
-    await ctx.runMutation(internal.lib.fmvCache.cacheFMV, {
-      ticker,
-      result: {
+    const now = Date.now();
+    
+    // Determine cache TTL based on market hours
+    const ttl = isMarketHours() 
+      ? (parseInt(process.env.FMV_CACHE_TTL_MINUTES || '5') * 60 * 1000)
+      : (parseInt(process.env.FMV_CACHE_TTL_CLOSED || '60') * 60 * 1000);
+    
+    const expiresAt = now + ttl;
+    
+    // Check if entry exists
+    const existing = await ctx.db
+      .query('fmvCache')
+      .withIndex('by_ticker', (q: any) => q.eq('ticker', ticker))
+      .first();
+    
+    if (existing) {
+      // Update existing entry
+      await ctx.db.patch(existing._id, {
         fmv: result.fmv!,
         source: result.source,
         confidence: result.confidence,
-        timestamp: result.timestamp,
-      },
-    });
+        cachedAt: now,
+        expiresAt,
+        hits: 0, // Reset hits on update
+      });
+    } else {
+      // Create new entry
+      await ctx.db.insert('fmvCache', {
+        ticker,
+        fmv: result.fmv!,
+        source: result.source,
+        confidence: result.confidence,
+        cachedAt: now,
+        expiresAt,
+        hits: 0,
+      });
+    }
   } catch (error) {
     console.error('Error caching result:', error);
   }
@@ -370,8 +434,38 @@ async function cacheResult(ctx: any, ticker: string, result: FMVResult): Promise
  */
 async function checkRateLimit(ctx: any, provider: string): Promise<{ allowed: boolean; reason?: string; resetAt?: number }> {
   try {
-    const result = await ctx.runMutation(internal.lib.fmvRateLimit.checkRateLimit, { provider });
-    return result;
+    const now = Date.now();
+    
+    // Simple rate limiting - check last hour
+    const hourAgo = now - 60 * 60 * 1000;
+    
+    const recentCalls = await ctx.db
+      .query('fmvRateLimits')
+      .withIndex('by_provider_and_time', (q: any) => 
+        q.eq('provider', provider)
+          .gte('timestamp', hourAgo)
+          .lte('timestamp', now)
+      )
+      .collect();
+    
+    // Basic rate limits
+    const limits: Record<string, number> = {
+      yahoo: 100,
+      alphavantage: 60,
+      finnhub: 60,
+    };
+    
+    const limit = limits[provider] || 60;
+    
+    if (recentCalls.length >= limit) {
+      return {
+        allowed: false,
+        reason: `Rate limit exceeded: ${recentCalls.length}/${limit} calls in last hour`,
+        resetAt: hourAgo + 60 * 60 * 1000,
+      };
+    }
+    
+    return { allowed: true };
   } catch (error) {
     console.error('Error checking rate limit:', error);
     // Default to allowing if rate limit check fails
@@ -384,8 +478,9 @@ async function checkRateLimit(ctx: any, provider: string): Promise<{ allowed: bo
  */
 async function trackApiCall(ctx: any, provider: string, success: boolean = true, responseTime?: number): Promise<void> {
   try {
-    await ctx.runMutation(internal.lib.fmvRateLimit.trackApiCall, {
+    await ctx.db.insert('fmvRateLimits', {
       provider,
+      timestamp: Date.now(),
       success,
       responseTime,
     });
@@ -395,38 +490,118 @@ async function trackApiCall(ctx: any, provider: string, success: boolean = true,
 }
 
 /**
+ * Check if currently in market hours (9:30 AM - 4:00 PM ET)
+ */
+function isMarketHours(): boolean {
+  const now = new Date();
+  const easternTime = new Date(now.toLocaleString("en-US", { timeZone: "America/New_York" }));
+  const hour = easternTime.getHours();
+  const minute = easternTime.getMinutes();
+  const day = easternTime.getDay();
+  
+  // Weekend check
+  if (day === 0 || day === 6) {
+    return false;
+  }
+  
+  // Time check (9:30 AM - 4:00 PM)
+  const currentMinutes = hour * 60 + minute;
+  const marketOpen = 9 * 60 + 30; // 9:30 AM
+  const marketClose = 16 * 60; // 4:00 PM
+  
+  return currentMinutes >= marketOpen && currentMinutes < marketClose;
+}
+
+/**
  * Batch fetch FMV for multiple tickers
  */
-export const batchFetchFMV = action({
+export const batchFetchFMV = internalAction({
   args: {
     tickers: v.array(v.string()),
     provider: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const results: Record<string, FMVResult> = {};
+    const provider = args.provider || process.env.FMV_DEFAULT_PROVIDER || 'yahoo';
     
     // Process in parallel with concurrency limit
     const batchSize = 5;
     for (let i = 0; i < args.tickers.length; i += batchSize) {
       const batch = args.tickers.slice(i, i + batchSize);
       
-      const batchResults = await Promise.all(
-        batch.map(ticker => 
-          ctx.runAction(internal.actions.fmvApi.fetchFMV, {
+      const batchPromises = batch.map(async (ticker) => {
+        try {
+          // Check cache first
+          const cached = await checkCache(ctx, ticker);
+          if (cached) {
+            return { ticker, result: cached };
+          }
+
+          // Check rate limit
+          const rateLimitCheck = await checkRateLimit(ctx, provider);
+          if (!rateLimitCheck.allowed) {
+            return {
+              ticker,
+              result: {
+                success: false,
+                source: provider,
+                confidence: 0,
+                error: 'Rate limit exceeded',
+                rateLimited: true,
+                timestamp: Date.now(),
+              } as FMVResult
+            };
+          }
+
+          // Fetch from provider
+          const startTime = Date.now();
+          let result: FMVResult;
+          
+          switch (provider) {
+            case 'yahoo':
+              result = await fetchFromYahoo(ticker);
+              break;
+            case 'alphavantage':
+              result = await fetchFromAlphaVantage(ticker);
+              break;
+            case 'finnhub':
+              result = await fetchFromFinnhub(ticker);
+              break;
+            default:
+              throw new Error(`Unknown provider: ${provider}`);
+          }
+
+          const responseTime = Date.now() - startTime;
+          
+          // Track the API call
+          await trackApiCall(ctx, provider, result.success, responseTime);
+
+          // Cache successful results
+          if (result.success && result.fmv) {
+            await cacheResult(ctx, ticker, result);
+          }
+
+          return { ticker, result };
+
+        } catch (error) {
+          await trackApiCall(ctx, provider, false);
+          return {
             ticker,
-            provider: args.provider,
-          }).catch(error => ({
-            success: false,
-            source: args.provider || 'unknown',
-            confidence: 0,
-            error: error.message,
-            timestamp: Date.now(),
-          }))
-        )
-      );
+            result: {
+              success: false,
+              source: provider,
+              confidence: 0,
+              error: error instanceof Error ? error.message : 'Unknown error',
+              timestamp: Date.now(),
+            } as FMVResult
+          };
+        }
+      });
       
-      batch.forEach((ticker, index) => {
-        results[ticker] = batchResults[index];
+      const batchResults = await Promise.all(batchPromises);
+      
+      batchResults.forEach(({ ticker, result }) => {
+        results[ticker] = result;
       });
     }
     

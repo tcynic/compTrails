@@ -5,9 +5,9 @@
  * and improve performance.
  */
 
-import { query, mutation, internalMutation } from '../_generated/server';
+import { query, mutation, internalMutation } from './_generated/server';
 import { v } from 'convex/values';
-import { FMVResult } from '../actions/fmvApi';
+import { FMVResult } from './fmvApi';
 
 // Cache entry structure
 const fmvCacheEntry = {
@@ -197,7 +197,7 @@ export const warmCache = internalMutation({
           results.push({ ticker, status: 'already_cached' });
         }
       } catch (error) {
-        results.push({ ticker, status: 'error', error: error.message });
+        results.push({ ticker, status: 'error', error: error instanceof Error ? error.message : 'Unknown error' });
       }
     }
     
