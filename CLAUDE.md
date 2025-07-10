@@ -37,6 +37,9 @@ This is a **Total Compensation Calculator** web application - a privacy-first, l
 ## Convex Development Notes
 
 - Use `npx convex dev` to push changes to Convex mutations
+- Use `npx convex deploy --prod` for production deployments
+- Convex functions are in `/convex/` directory with TypeScript schema
+- All sensitive data is stored encrypted in Convex (zero-knowledge architecture)
 
 ## Key Architectural Principles
 
@@ -66,7 +69,7 @@ This is a **Total Compensation Calculator** web application - a privacy-first, l
 ```bash
 # Development
 npm run dev              # Start development server with Turbopack
-npm run build           # Build for production
+npm run build           # Build for production (includes WASM copy)
 npm run build:analyze   # Build with bundle analysis
 npm run start           # Start production server
 
@@ -74,10 +77,59 @@ npm run start           # Start production server
 npm run lint            # ESLint checking
 npm run format          # Prettier formatting
 
+# Special Commands
+npm run copy-wasm       # Copy Argon2 WASM files to public directory
+
 # Deployment
 npm run deploy:staging  # Deploy to staging environment
 npm run deploy:prod     # Deploy to production environment
 ```
+
+## Codebase Architecture
+
+### Project Structure
+
+```
+src/
+├── app/                    # Next.js App Router (pages and API routes)
+│   ├── dashboard/         # Main dashboard pages
+│   └── api/              # API endpoints (auth, emergency-sync)
+├── components/            # React components
+│   ├── features/         # Feature-specific components
+│   │   ├── bonus/       # Bonus tracking
+│   │   ├── equity/      # Equity management
+│   │   └── salary/      # Salary tracking
+│   └── ui/              # Reusable UI components
+├── lib/                   # Core libraries
+│   ├── crypto/          # Encryption/decryption (Argon2 + AES)
+│   ├── db/              # IndexedDB interface (Dexie)
+│   └── validations/     # Zod schemas
+├── services/             # Business logic services
+│   ├── syncService.ts   # Online/offline sync
+│   └── encryptionService.ts  # Client-side encryption
+└── hooks/               # Custom React hooks
+```
+
+### Key Development Patterns
+
+- **Feature-based organization**: Components organized by feature (salary, bonus, equity)
+- **Service layer pattern**: Business logic separated from UI components
+- **Custom hooks**: Reusable logic abstracted into hooks
+- **Zero-knowledge encryption**: All sensitive data encrypted before storage
+- **Optimistic updates**: UI updates immediately, sync happens in background
+
+### Testing
+
+- Limited testing setup currently implemented
+- Manual encryption tests available in `src/lib/crypto/__tests__/encryption.test.ts`
+- No formal test framework configured - consider adding Vitest or Jest for comprehensive testing
+
+### Critical Dependencies
+
+- **Argon2 WASM**: Requires `npm run copy-wasm` for proper builds
+- **Dexie**: IndexedDB wrapper for local storage
+- **Convex**: Real-time database with TypeScript integration
+- **WorkOS**: Enterprise authentication with audit logging
 
 ## Project Documentation
 
@@ -97,3 +149,4 @@ npm run deploy:prod     # Deploy to production environment
 - v2.3 - Added reference to initialPRD.md for product design documentation (2024-07-10)
 - v2.4 - Added reference to @deployment.md for deployment methods (2024-07-10)
 - v2.5 - Added reference to @context/architecture.md for application architecture (2024-07-11)
+- v2.6 - Enhanced with detailed codebase architecture, project structure, development patterns, and current testing status (2025-07-10)
