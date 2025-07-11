@@ -15,13 +15,22 @@ export interface MasterPasswordState {
   lastUsed: number | null;
 }
 
+interface User {
+  id: string;
+  email: string;
+  firstName: string;
+  lastName: string;
+}
+
 export class PasswordService {
   private static readonly STORAGE_KEY = 'master_password_state';
   private static readonly SESSION_TIMEOUT = 15 * 60 * 1000; // 15 minutes
   private static readonly MIN_PASSWORD_LENGTH = 12;
+  private static readonly AUTO_DERIVE_SALT = 'comptrails_auto_derive_2025';
   
   private static sessionPassword: string | null = null;
   private static sessionExpiry: number | null = null;
+  private static isAutoderived: boolean = false;
 
   /**
    * Validates password strength and provides feedback
@@ -324,10 +333,54 @@ export class PasswordService {
   }
 
   /**
+   * Derives an encryption key automatically from user authentication data
+   */
+  static async deriveKeyFromAuth(user: User): Promise<{
+    success: boolean;
+    error?: string;
+  }> {
+    try {
+      // Create deterministic password from user credentials
+      const userData = `${user.id}:${user.email}:${this.AUTO_DERIVE_SALT}`;
+      const encoder = new TextEncoder();
+      const keyMaterial = encoder.encode(userData);
+      
+      // Use WebCrypto to derive a consistent key
+      const hashBuffer = await crypto.subtle.digest('SHA-256', keyMaterial);
+      
+      // Convert to base64 for use as password
+      const derivedPassword = CryptoUtils.arrayBufferToBase64(hashBuffer);
+      
+      // Set as session password
+      this.setSessionPassword(derivedPassword);
+      this.isAutoderived = true;
+      
+      console.log('Successfully derived encryption key from user authentication');
+      return { success: true };
+    } catch (error) {
+      console.error('Automatic key derivation failed:', error);
+      return {
+        success: false,
+        error: 'Failed to derive encryption key from authentication'
+      };
+    }
+  }
+
+  /**
    * Gets the current master password state
    */
   static getMasterPasswordState(): MasterPasswordState {
     try {
+      // If using auto-derived keys, return virtual state
+      if (this.isAutoderived && this.sessionPassword) {
+        return {
+          isSet: true,
+          hashedFingerprint: 'auto-derived',
+          createdAt: Date.now(),
+          lastUsed: Date.now(),
+        };
+      }
+      
       const stored = localStorage.getItem(this.STORAGE_KEY);
       if (!stored) {
         return {
@@ -379,6 +432,7 @@ export class PasswordService {
   static clearSessionPassword(): void {
     this.sessionPassword = null;
     this.sessionExpiry = null;
+    this.isAutoderived = false;
   }
 
   /**
@@ -471,5 +525,12 @@ export class PasswordService {
     } else {
       return 'Centuries';
     }
+  }
+
+  /**
+   * Checks if the current session is using auto-derived keys
+   */
+  static isUsingAutoDerivedKey(): boolean {
+    return this.isAutoderived;
   }
 }

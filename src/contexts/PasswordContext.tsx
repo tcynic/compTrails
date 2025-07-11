@@ -3,6 +3,13 @@
 import { createContext, useContext, useState, useEffect, useCallback, useMemo, ReactNode } from 'react';
 import { PasswordService, PasswordValidationResult, MasterPasswordState } from '@/services/passwordService';
 
+interface User {
+  id: string;
+  email: string;
+  firstName: string;
+  lastName: string;
+}
+
 interface PasswordContextType {
   // Password state
   isPasswordSet: boolean;
@@ -47,9 +54,10 @@ const PasswordContext = createContext<PasswordContextType | null>(null);
 
 interface PasswordProviderProps {
   children: ReactNode;
+  user: User | null;
 }
 
-export function PasswordProvider({ children }: PasswordProviderProps) {
+export function PasswordProvider({ children, user }: PasswordProviderProps) {
   const [passwordState, setPasswordState] = useState<MasterPasswordState>({
     isSet: false,
     hashedFingerprint: null,
@@ -60,6 +68,46 @@ export function PasswordProvider({ children }: PasswordProviderProps) {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  // Automatically derive key when user is authenticated
+  useEffect(() => {
+    const deriveKeyFromUser = async () => {
+      if (!user) {
+        // Clear session when user logs out
+        PasswordService.clearSessionPassword();
+        setIsAuthenticated(false);
+        setPasswordState({
+          isSet: false,
+          hashedFingerprint: null,
+          createdAt: null,
+          lastUsed: null,
+        });
+        return;
+      }
+
+      try {
+        console.log('Deriving encryption key from user authentication');
+        const result = await PasswordService.deriveKeyFromAuth(user);
+        
+        if (result.success) {
+          const state = PasswordService.getMasterPasswordState();
+          setPasswordState(state);
+          setIsAuthenticated(true);
+          setError(null);
+          console.log('Encryption key derived successfully');
+        } else {
+          setError(result.error || 'Failed to derive encryption key');
+          setIsAuthenticated(false);
+        }
+      } catch (err) {
+        console.error('Failed to derive encryption key:', err);
+        setError('Failed to initialize encryption system');
+        setIsAuthenticated(false);
+      }
+    };
+
+    deriveKeyFromUser();
+  }, [user]);
 
   // Initialize password state on mount
   useEffect(() => {
@@ -79,8 +127,13 @@ export function PasswordProvider({ children }: PasswordProviderProps) {
       }
     };
 
-    initializePasswordState();
-  }, []);
+    // Only initialize if no user (fallback to manual password setup)
+    if (!user) {
+      initializePasswordState();
+    } else {
+      setIsLoading(false);
+    }
+  }, [user]);
 
   // Session validation timer
   useEffect(() => {
