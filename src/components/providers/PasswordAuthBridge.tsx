@@ -3,6 +3,7 @@
 import { ReactNode } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { PasswordProvider } from '@/contexts/PasswordContext';
+import { UserSyncProvider } from './UserSyncProvider';
 
 interface PasswordAuthBridgeProps {
   children: ReactNode;
@@ -17,7 +18,9 @@ export function PasswordAuthBridge({ children }: PasswordAuthBridgeProps) {
   
   return (
     <PasswordProvider user={user}>
-      {children}
+      <UserSyncProvider user={user}>
+        {children}
+      </UserSyncProvider>
     </PasswordProvider>
   );
 }

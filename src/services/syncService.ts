@@ -12,6 +12,7 @@ export class SyncService {
   private static syncInterval: NodeJS.Timeout | null = null;
   private static listeners: Array<(status: SyncStatus) => void> = [];
   private static convexClient: ConvexReactClient | null = null;
+  private static currentUserId: string | null = null;
 
   // Sync status interface
   static readonly syncStatus = {
@@ -48,6 +49,14 @@ export class SyncService {
    */
   static setConvexClient(client: ConvexReactClient): void {
     this.convexClient = client;
+  }
+
+  /**
+   * Set the current user context for sync operations
+   */
+  static setUserContext(userId: string | null): void {
+    this.currentUserId = userId;
+    console.log(`[SyncService] User context set to: ${userId || 'null'}`);
   }
 
   /**
@@ -95,6 +104,9 @@ export class SyncService {
       return;
     }
 
+    // Use provided userId or fall back to current user context
+    const effectiveUserId = userId || this.currentUserId || undefined;
+
     this.syncInProgress = true;
     this.notifyListeners(this.syncStatus.syncing);
 
@@ -102,8 +114,8 @@ export class SyncService {
       // Process offline queue first
       await this.processOfflineQueue();
       
-      // Then process pending sync items
-      await this.processPendingSync(userId);
+      // Then process pending sync items with effective user ID
+      await this.processPendingSync(effectiveUserId);
       
       this.notifyListeners(this.syncStatus.idle);
     } catch (error) {
@@ -213,7 +225,7 @@ export class SyncService {
    */
   private static async processPendingSync(userId?: string): Promise<void> {
     if (!userId) {
-      console.warn('[SyncService] No user ID provided, skipping sync');
+      console.log('[SyncService] No user ID available, skipping pending sync (user not authenticated)');
       return;
     }
     
