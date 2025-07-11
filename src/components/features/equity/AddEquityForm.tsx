@@ -33,7 +33,7 @@ interface AddEquityFormProps {
 export function AddEquityForm({ isOpen, onClose, onSuccess }: AddEquityFormProps) {
   const [isLoading, setIsLoading] = useState(false);
   const { user } = useAuth();
-  const getPassword = useSecurePassword;
+  const password = useSecurePassword();
   
   const form = useForm<EquityFormData>({
     resolver: zodResolver(equitySchema),
@@ -68,14 +68,13 @@ export function AddEquityForm({ isOpen, onClose, onSuccess }: AddEquityFormProps
     setIsLoading(true);
     try {
       // Get user's master password from secure context
-      const userPassword = getPassword();
-      if (!userPassword) {
+      if (!password) {
         alert('Please authenticate to continue');
         return;
       }
       
       // Encrypt the sensitive data
-      const encryptedData = await EncryptionService.encryptData(JSON.stringify(data), userPassword);
+      const encryptedData = await EncryptionService.encryptData(JSON.stringify(data), password);
       
       // Store locally first (local-first architecture)
       await LocalStorageService.addCompensationRecord({

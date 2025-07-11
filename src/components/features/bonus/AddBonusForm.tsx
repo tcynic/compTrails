@@ -26,7 +26,7 @@ interface AddBonusFormProps {
 export function AddBonusForm({ isOpen, onClose, onSuccess }: AddBonusFormProps) {
   const [isLoading, setIsLoading] = useState(false);
   const { user } = useAuth();
-  const getPassword = useSecurePassword;
+  const password = useSecurePassword();
   
   const form = useForm<BonusFormData>({
     resolver: zodResolver(bonusSchema),
@@ -48,14 +48,13 @@ export function AddBonusForm({ isOpen, onClose, onSuccess }: AddBonusFormProps) 
     setIsLoading(true);
     try {
       // Get user's master password from secure context
-      const userPassword = getPassword();
-      if (!userPassword) {
+      if (!password) {
         alert('Please authenticate to continue');
         return;
       }
       
       // Encrypt the sensitive data
-      const encryptedData = await EncryptionService.encryptData(JSON.stringify(data), userPassword);
+      const encryptedData = await EncryptionService.encryptData(JSON.stringify(data), password);
       
       // Store locally first (local-first architecture)
       await LocalStorageService.addCompensationRecord({

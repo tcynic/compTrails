@@ -32,7 +32,7 @@ interface AddSalaryFormProps {
 export function AddSalaryForm({ isOpen, onClose, onSuccess, editRecord }: AddSalaryFormProps) {
   const [isLoading, setIsLoading] = useState(false);
   const { user } = useAuth();
-  const getPassword = useSecurePassword;
+  const password = useSecurePassword();
   
   // Determine if we're in edit mode
   const isEditMode = !!editRecord;
@@ -89,14 +89,13 @@ export function AddSalaryForm({ isOpen, onClose, onSuccess, editRecord }: AddSal
     setIsLoading(true);
     try {
       // Get user's master password from secure context
-      const userPassword = getPassword();
-      if (!userPassword) {
+      if (!password) {
         alert('Please authenticate to continue');
         return;
       }
       
       // Encrypt the sensitive data
-      const encryptedData = await EncryptionService.encryptData(JSON.stringify(data), userPassword);
+      const encryptedData = await EncryptionService.encryptData(JSON.stringify(data), password);
       
       if (isEditMode && editRecord) {
         // Update existing record
