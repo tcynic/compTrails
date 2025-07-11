@@ -204,10 +204,21 @@ export class SyncService {
             throw new Error(`Cannot update record ${recordId}: no Convex ID found`);
           }
           
-          await this.convexClient.mutation(api.compensationRecords.updateCompensationRecord, {
+          const updatedRecord = await this.convexClient.mutation(api.compensationRecords.updateCompensationRecord, {
             id: localRecord.convexId as Id<"compensationRecords">,
             ...(data as unknown as UpdateCompensationSyncData),
           });
+          
+          // Sync the updated version back to the local record
+          if (updatedRecord && (updatedRecord as any).version && recordId) {
+            const localId = parseInt(recordId as string);
+            await db.compensationRecords.update(localId, {
+              version: (updatedRecord as any).version,
+              lastSyncAt: Date.now(),
+              syncStatus: 'synced',
+            });
+            console.log(`[SyncService] Synced updated version ${(updatedRecord as any).version} back to local record ${localId} (offline queue)`);
+          }
           break;
         
         case 'delete':
@@ -419,10 +430,20 @@ export class SyncService {
           }
           
           console.log(`[SyncService] Updating Convex record ${localRecord.convexId} for local record ${item.recordId}`);
-          await this.convexClient.mutation(api.compensationRecords.updateCompensationRecord, {
+          const updatedRecord = await this.convexClient.mutation(api.compensationRecords.updateCompensationRecord, {
             id: localRecord.convexId as Id<"compensationRecords">,
             ...(item.data as unknown as UpdateCompensationSyncData),
           });
+          
+          // Sync the updated version back to the local record
+          if (updatedRecord && (updatedRecord as any).version) {
+            await db.compensationRecords.update(item.recordId, {
+              version: (updatedRecord as any).version,
+              lastSyncAt: Date.now(),
+              syncStatus: 'synced',
+            });
+            console.log(`[SyncService] Synced updated version ${(updatedRecord as any).version} back to local record ${item.recordId}`);
+          }
           break;
         
         case 'delete':

@@ -85,15 +85,21 @@ export const updateCompensationRecord = mutation({
       throw new Error("Record not found");
     }
 
-    // Simple conflict resolution: check version
+    // Last-write-wins conflict resolution for local-first architecture
+    // Instead of strict version checking, we log conflicts and proceed with the update
     if (existing.version !== version) {
-      throw new Error("Version conflict - record has been modified");
+      console.log(
+        `Version conflict detected for record ${id}: local version ${version}, server version ${existing.version}. Applying last-write-wins resolution.`
+      );
     }
+
+    // Use the higher of the two versions plus 1 to maintain version progression
+    const newVersion = Math.max(existing.version, version) + 1;
 
     return await ctx.db.patch(id, {
       ...updates,
       updatedAt: Date.now(),
-      version: version + 1,
+      version: newVersion,
       syncStatus: "synced",
     });
   },
