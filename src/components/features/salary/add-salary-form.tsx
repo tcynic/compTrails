@@ -1,22 +1,40 @@
-'use client';
+"use client";
 
-import React, { useState } from 'react';
-import { useForm } from 'react-hook-form';
-import { zodResolver } from '@hookform/resolvers/zod';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Controller } from 'react-hook-form';
-import { FormItem, FormControl, FormMessage } from '@/components/ui/form-field';
-import { FormLabel } from '@/components/ui/form-label';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
-import { salarySchema, type SalaryFormData, currencyOptions } from '@/lib/validations/salary';
-import { useAuth } from '@/contexts/AuthContext';
-import { useSecurePassword } from '@/hooks/usePassword';
-import { EncryptionService } from '@/services/encryptionService';
-import { LocalStorageService } from '@/services/localStorageService';
-import { format } from 'date-fns';
-import type { DecryptedSalaryData, CompensationRecord } from '@/lib/db/types';
+import React, { useState } from "react";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Controller } from "react-hook-form";
+import { FormItem, FormControl, FormMessage } from "@/components/ui/form-field";
+import { FormLabel } from "@/components/ui/form-label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from "@/components/ui/dialog";
+import {
+  salarySchema,
+  type SalaryFormData,
+  currencyOptions,
+  validateCurrentSalaryConstraint,
+} from "@/lib/validations/salary";
+import { useAuth } from "@/contexts/AuthContext";
+import { useSecurePassword } from "@/hooks/usePassword";
+import { EncryptionService } from "@/services/encryptionService";
+import { LocalStorageService } from "@/services/localStorageService";
+import { format } from "date-fns";
+import type { DecryptedSalaryData, CompensationRecord } from "@/lib/db/types";
 
 interface DecryptedSalaryRecord extends CompensationRecord {
   decryptedData: DecryptedSalaryData;
@@ -29,28 +47,43 @@ interface AddSalaryFormProps {
   editRecord?: DecryptedSalaryRecord; // Optional record to edit
 }
 
-export function AddSalaryForm({ isOpen, onClose, onSuccess, editRecord }: AddSalaryFormProps) {
+export function AddSalaryForm({
+  isOpen,
+  onClose,
+  onSuccess,
+  editRecord,
+}: AddSalaryFormProps) {
   const [isLoading, setIsLoading] = useState(false);
   const { user } = useAuth();
   const password = useSecurePassword();
-  
+
   // Determine if we're in edit mode
   const isEditMode = !!editRecord;
-  
+
   const form = useForm<SalaryFormData>({
     resolver: zodResolver(salarySchema),
     defaultValues: {
-      company: '',
-      title: '',
-      location: '',
+      company: "",
+      title: "",
+      location: "",
       amount: 0,
-      currency: 'USD',
-      startDate: format(new Date(), 'yyyy-MM-dd'),
-      endDate: '',
+      currency: "USD",
+      startDate: format(new Date(), "yyyy-MM-dd"),
+      endDate: "",
       isCurrentPosition: true,
-      notes: '',
+      notes: "",
     },
   });
+
+  // Watch for changes to isCurrentPosition to manage endDate
+  const isCurrentPosition = form.watch("isCurrentPosition");
+
+  React.useEffect(() => {
+    if (isCurrentPosition) {
+      // Clear end date when current position is checked
+      form.setValue("endDate", "");
+    }
+  }, [isCurrentPosition, form]);
 
   // Pre-populate form when editing
   React.useEffect(() => {
@@ -63,40 +96,56 @@ export function AddSalaryForm({ isOpen, onClose, onSuccess, editRecord }: AddSal
         amount: data.amount,
         currency: data.currency,
         startDate: data.startDate,
-        endDate: data.endDate || '',
+        endDate: data.endDate || "",
         isCurrentPosition: data.isCurrentPosition,
-        notes: data.notes || '',
+        notes: data.notes || "",
       });
     } else if (!editRecord && isOpen) {
       // Reset to default values when opening in add mode
       form.reset({
-        company: '',
-        title: '',
-        location: '',
+        company: "",
+        title: "",
+        location: "",
         amount: 0,
-        currency: 'USD',
-        startDate: format(new Date(), 'yyyy-MM-dd'),
-        endDate: '',
+        currency: "USD",
+        startDate: format(new Date(), "yyyy-MM-dd"),
+        endDate: "",
         isCurrentPosition: true,
-        notes: '',
+        notes: "",
       });
     }
   }, [editRecord, isOpen, form]);
 
   const onSubmit = async (data: SalaryFormData) => {
     if (!user) return;
-    
+
     setIsLoading(true);
     try {
       // Get user's master password from secure context
       if (!password) {
-        alert('Please authenticate to continue');
+        alert("Please authenticate to continue");
         return;
       }
-      
+
+      // Validate current salary constraint
+      const validation = await validateCurrentSalaryConstraint(
+        user.id,
+        data.isCurrentPosition,
+        password,
+        editRecord?.id
+      );
+
+      if (!validation.isValid) {
+        alert(validation.message);
+        return;
+      }
+
       // Encrypt the sensitive data
-      const encryptedData = await EncryptionService.encryptData(JSON.stringify(data), password);
-      
+      const encryptedData = await EncryptionService.encryptData(
+        JSON.stringify(data),
+        password
+      );
+
       if (isEditMode && editRecord) {
         // Update existing record
         await LocalStorageService.updateCompensationRecord(editRecord.id!, {
@@ -109,12 +158,12 @@ export function AddSalaryForm({ isOpen, onClose, onSuccess, editRecord }: AddSal
         // Create new record - Store locally first (local-first architecture)
         await LocalStorageService.addCompensationRecord({
           userId: user.id,
-          type: 'salary',
+          type: "salary",
           encryptedData,
           currency: data.currency,
           createdAt: Date.now(),
           updatedAt: Date.now(),
-          syncStatus: 'pending',
+          syncStatus: "pending",
           version: 1,
         });
       }
@@ -123,7 +172,10 @@ export function AddSalaryForm({ isOpen, onClose, onSuccess, editRecord }: AddSal
       onClose();
       form.reset();
     } catch (error) {
-      console.error(`Error ${isEditMode ? 'updating' : 'saving'} salary:`, error);
+      console.error(
+        `Error ${isEditMode ? "updating" : "saving"} salary:`,
+        error
+      );
     } finally {
       setIsLoading(false);
     }
@@ -133,15 +185,16 @@ export function AddSalaryForm({ isOpen, onClose, onSuccess, editRecord }: AddSal
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent className="max-w-2xl">
         <DialogHeader>
-          <DialogTitle>{isEditMode ? 'Edit Salary' : 'Add New Salary'}</DialogTitle>
+          <DialogTitle>
+            {isEditMode ? "Edit Salary" : "Add New Salary"}
+          </DialogTitle>
           <DialogDescription>
-            {isEditMode 
-              ? 'Update your salary information including base pay, currency, and effective dates.'
-              : 'Record your salary information including base pay, currency, and effective dates.'
-            }
+            {isEditMode
+              ? "Update your salary information including base pay, currency, and effective dates."
+              : "Record your salary information including base pay, currency, and effective dates."}
           </DialogDescription>
         </DialogHeader>
-        
+
         <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
           <div className="grid grid-cols-2 gap-4">
             <Controller
@@ -153,11 +206,13 @@ export function AddSalaryForm({ isOpen, onClose, onSuccess, editRecord }: AddSal
                   <FormControl>
                     <Input placeholder="e.g., Google Inc." {...field} />
                   </FormControl>
-                  {fieldState.error && <FormMessage>{fieldState.error.message}</FormMessage>}
+                  {fieldState.error && (
+                    <FormMessage>{fieldState.error.message}</FormMessage>
+                  )}
                 </FormItem>
               )}
             />
-            
+
             <Controller
               control={form.control}
               name="title"
@@ -167,7 +222,9 @@ export function AddSalaryForm({ isOpen, onClose, onSuccess, editRecord }: AddSal
                   <FormControl>
                     <Input placeholder="e.g., Software Engineer" {...field} />
                   </FormControl>
-                  {fieldState.error && <FormMessage>{fieldState.error.message}</FormMessage>}
+                  {fieldState.error && (
+                    <FormMessage>{fieldState.error.message}</FormMessage>
+                  )}
                 </FormItem>
               )}
             />
@@ -182,7 +239,9 @@ export function AddSalaryForm({ isOpen, onClose, onSuccess, editRecord }: AddSal
                 <FormControl>
                   <Input placeholder="e.g., San Francisco, CA" {...field} />
                 </FormControl>
-                {fieldState.error && <FormMessage>{fieldState.error.message}</FormMessage>}
+                {fieldState.error && (
+                  <FormMessage>{fieldState.error.message}</FormMessage>
+                )}
               </FormItem>
             )}
           />
@@ -199,10 +258,14 @@ export function AddSalaryForm({ isOpen, onClose, onSuccess, editRecord }: AddSal
                       type="number"
                       placeholder="150000"
                       {...field}
-                      onChange={(e) => field.onChange(Number(e.currentTarget!.value))}
+                      onChange={(e) =>
+                        field.onChange(Number(e.currentTarget!.value))
+                      }
                     />
                   </FormControl>
-                  {fieldState.error && <FormMessage>{fieldState.error.message}</FormMessage>}
+                  {fieldState.error && (
+                    <FormMessage>{fieldState.error.message}</FormMessage>
+                  )}
                 </FormItem>
               )}
             />
@@ -213,7 +276,10 @@ export function AddSalaryForm({ isOpen, onClose, onSuccess, editRecord }: AddSal
               render={({ field, fieldState }) => (
                 <FormItem>
                   <FormLabel>Currency</FormLabel>
-                  <Select onValueChange={field.onChange} defaultValue={field.value}>
+                  <Select
+                    onValueChange={field.onChange}
+                    defaultValue={field.value}
+                  >
                     <FormControl>
                       <SelectTrigger>
                         <SelectValue placeholder="Select currency" />
@@ -227,7 +293,9 @@ export function AddSalaryForm({ isOpen, onClose, onSuccess, editRecord }: AddSal
                       ))}
                     </SelectContent>
                   </Select>
-                  {fieldState.error && <FormMessage>{fieldState.error.message}</FormMessage>}
+                  {fieldState.error && (
+                    <FormMessage>{fieldState.error.message}</FormMessage>
+                  )}
                 </FormItem>
               )}
             />
@@ -243,7 +311,9 @@ export function AddSalaryForm({ isOpen, onClose, onSuccess, editRecord }: AddSal
                   <FormControl>
                     <Input type="date" {...field} />
                   </FormControl>
-                  {fieldState.error && <FormMessage>{fieldState.error.message}</FormMessage>}
+                  {fieldState.error && (
+                    <FormMessage>{fieldState.error.message}</FormMessage>
+                  )}
                 </FormItem>
               )}
             />
@@ -253,11 +323,27 @@ export function AddSalaryForm({ isOpen, onClose, onSuccess, editRecord }: AddSal
               name="endDate"
               render={({ field, fieldState }) => (
                 <FormItem>
-                  <FormLabel>End Date (optional)</FormLabel>
+                  <FormLabel>
+                    End Date{" "}
+                    {isCurrentPosition
+                      ? "(disabled for current position)"
+                      : "(required for past positions)"}
+                  </FormLabel>
                   <FormControl>
-                    <Input type="date" {...field} />
+                    <Input
+                      type="date"
+                      {...field}
+                      disabled={isCurrentPosition}
+                      className={
+                        isCurrentPosition
+                          ? "bg-gray-100 cursor-not-allowed"
+                          : ""
+                      }
+                    />
                   </FormControl>
-                  {fieldState.error && <FormMessage>{fieldState.error.message}</FormMessage>}
+                  {fieldState.error && (
+                    <FormMessage>{fieldState.error.message}</FormMessage>
+                  )}
                 </FormItem>
               )}
             />
@@ -267,10 +353,12 @@ export function AddSalaryForm({ isOpen, onClose, onSuccess, editRecord }: AddSal
             <input
               type="checkbox"
               id="isCurrentPosition"
-              {...form.register('isCurrentPosition')}
+              {...form.register("isCurrentPosition")}
               className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
             />
-            <FormLabel htmlFor="isCurrentPosition">This is my current position</FormLabel>
+            <FormLabel htmlFor="isCurrentPosition">
+              This is my current position
+            </FormLabel>
           </div>
 
           <Controller
@@ -286,7 +374,9 @@ export function AddSalaryForm({ isOpen, onClose, onSuccess, editRecord }: AddSal
                     {...field}
                   />
                 </FormControl>
-                {fieldState.error && <FormMessage>{fieldState.error.message}</FormMessage>}
+                {fieldState.error && (
+                  <FormMessage>{fieldState.error.message}</FormMessage>
+                )}
               </FormItem>
             )}
           />
@@ -296,10 +386,13 @@ export function AddSalaryForm({ isOpen, onClose, onSuccess, editRecord }: AddSal
               Cancel
             </Button>
             <Button type="submit" disabled={isLoading}>
-              {isLoading 
-                ? (isEditMode ? 'Updating...' : 'Saving...') 
-                : (isEditMode ? 'Update Salary' : 'Save Salary')
-              }
+              {isLoading
+                ? isEditMode
+                  ? "Updating..."
+                  : "Saving..."
+                : isEditMode
+                  ? "Update Salary"
+                  : "Save Salary"}
             </Button>
           </DialogFooter>
         </form>
