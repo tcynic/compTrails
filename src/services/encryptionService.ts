@@ -371,6 +371,15 @@ export class EncryptionService {
             // Validate each record
             const validation = this.validateEncryptedData(encryptedData);
             if (!validation.isValid) {
+              console.error(`[EncryptionService] Record ${index} validation failed:`, {
+                recordPreview: encryptedData.encryptedData?.substring(0, 20) + '...',
+                validationErrors: validation.errors,
+                hasData: !!encryptedData.encryptedData,
+                hasIv: !!encryptedData.iv,
+                hasSalt: !!encryptedData.salt,
+                algorithm: encryptedData.algorithm,
+                keyDerivation: encryptedData.keyDerivation
+              });
               return {
                 data: '',
                 success: false,
@@ -402,10 +411,22 @@ export class EncryptionService {
             return { data: decryptedData, success: true };
 
           } catch (error) {
+            console.error(`[EncryptionService] Record ${index} decryption failed:`, {
+              recordPreview: encryptedData.encryptedData?.substring(0, 20) + '...',
+              hasData: !!encryptedData.encryptedData,
+              hasIv: !!encryptedData.iv,
+              hasSalt: !!encryptedData.salt,
+              algorithm: encryptedData.algorithm,
+              keyDerivation: encryptedData.keyDerivation,
+              dataLength: encryptedData.encryptedData?.length,
+              ivLength: encryptedData.iv?.length,
+              saltLength: encryptedData.salt?.length,
+              errorMessage: error instanceof Error ? error.message : 'Unknown error'
+            });
             return {
               data: '',
               success: false,
-              error: error instanceof Error ? error.message : 'Decryption failed',
+              error: `Record ${index}: ${error instanceof Error ? error.message : 'Decryption failed'}`,
             };
           }
         })
