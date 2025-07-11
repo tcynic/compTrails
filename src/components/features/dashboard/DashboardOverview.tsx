@@ -155,18 +155,28 @@ export function DashboardOverview() {
     } finally {
       setIsLoading(false);
     }
-  }, [user, password, convexRecords]);
+  }, [user, password]);
 
   useEffect(() => {
-    // Only load data when we have convexRecords result (even if empty) or if user/password changed
+    // Only load data when we have convexRecords result (even if empty)
     if (convexRecords !== undefined) {
       loadAllCompensationData();
     }
-    
-    // Track dashboard view
-    trackPageView('dashboard_overview');
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loadAllCompensationData, convexRecords]); // trackPageView omitted to prevent rate limiting
+  }, [convexRecords]); // Only depend on convexRecords, not the callback
+
+  // Separate effect for tracking page view (only once per mount)
+  useEffect(() => {
+    trackPageView('dashboard_overview');
+  }, []); // Empty dependency array for one-time execution
+
+  // Reload data when user or password changes
+  useEffect(() => {
+    if (user && password && convexRecords !== undefined) {
+      loadAllCompensationData();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user, password]); // Reload when user or password changes
 
   // Update loading state based on Convex query status
   const isConvexLoading = convexRecords === undefined && user !== null;
