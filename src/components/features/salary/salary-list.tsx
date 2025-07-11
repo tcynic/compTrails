@@ -1,17 +1,23 @@
-'use client';
+"use client";
 
-import { useState, useEffect, useCallback } from 'react';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { Edit, Trash2, MapPin, Calendar, DollarSign } from 'lucide-react';
-import { useAuth } from '@/contexts/AuthContext';
-import { useSecurePassword } from '@/hooks/usePassword';
-import { LocalStorageService } from '@/services/localStorageService';
-import { EncryptionService } from '@/services/encryptionService';
-import { format } from 'date-fns';
-import type { CompensationRecord, DecryptedSalaryData } from '@/lib/db/types';
-import { currencyOptions } from '@/lib/validations/salary';
+import { useState, useEffect, useCallback } from "react";
+import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Edit, Trash2, MapPin, Calendar, DollarSign } from "lucide-react";
+import { useAuth } from "@/contexts/AuthContext";
+import { useSecurePassword } from "@/hooks/usePassword";
+import { LocalStorageService } from "@/services/localStorageService";
+import { EncryptionService } from "@/services/encryptionService";
+import { format } from "date-fns";
+import type { CompensationRecord, DecryptedSalaryData } from "@/lib/db/types";
+import { currencyOptions } from "@/lib/validations/salary";
 
 interface DecryptedSalaryRecord extends CompensationRecord {
   decryptedData: DecryptedSalaryData;
@@ -23,7 +29,11 @@ interface SalaryListProps {
   refreshTrigger?: number;
 }
 
-export function SalaryList({ onEdit, onDelete, refreshTrigger }: SalaryListProps) {
+export function SalaryList({
+  onEdit,
+  onDelete,
+  refreshTrigger,
+}: SalaryListProps) {
   const [salaries, setSalaries] = useState<DecryptedSalaryRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const { user } = useAuth();
@@ -31,38 +41,58 @@ export function SalaryList({ onEdit, onDelete, refreshTrigger }: SalaryListProps
 
   const loadSalaries = useCallback(async () => {
     if (!user) return;
-    
+
     try {
       setLoading(true);
-      const records = await LocalStorageService.getCompensationRecords(user.id, 'salary');
-      
+      const records = await LocalStorageService.getCompensationRecords(
+        user.id,
+        "salary"
+      );
+
       // Get user's master password from secure context
       if (!password) {
-        console.warn('Password not available, cannot decrypt data');
+        console.warn("Password not available, cannot decrypt data");
         return;
       }
-      
+
       const decryptedRecords = await Promise.all(
         records.map(async (record) => {
           try {
-            const decryptResult = await EncryptionService.decryptData(record.encryptedData, password);
+            const decryptResult = await EncryptionService.decryptData(
+              record.encryptedData,
+              password
+            );
             if (decryptResult.success) {
-              const decryptedData = JSON.parse(decryptResult.data) as DecryptedSalaryData;
+              const decryptedData = JSON.parse(
+                decryptResult.data
+              ) as DecryptedSalaryData;
               return { ...record, decryptedData };
             } else {
-              console.error('Error decrypting salary record:', decryptResult.error);
+              console.error(
+                "Error decrypting salary record:",
+                decryptResult.error
+              );
               return null;
             }
           } catch (error) {
-            console.error('Error decrypting salary record:', error);
+            console.error("Error decrypting salary record:", error);
             return null;
           }
         })
       );
-      
-      setSalaries(decryptedRecords.filter(Boolean) as DecryptedSalaryRecord[]);
+
+      // Sort salaries by start date (newest to oldest)
+      const sortedSalaries = (
+        decryptedRecords.filter(Boolean) as DecryptedSalaryRecord[]
+      ).sort((a, b) => {
+        const dateA = new Date(a.decryptedData.startDate);
+        const dateB = new Date(b.decryptedData.startDate);
+        return dateB.getTime() - dateA.getTime(); // Newest first
+      });
+
+      setSalaries(sortedSalaries);
     } catch (error) {
-      console.error('Error loading salaries:', error);
+      console.error("Error loading salaries:", error);
     } finally {
       setLoading(false);
     }
@@ -73,12 +103,13 @@ export function SalaryList({ onEdit, onDelete, refreshTrigger }: SalaryListProps
   }, [user, refreshTrigger, loadSalaries]);
 
   const formatCurrency = (amount: number, currency: string) => {
-    const currencySymbol = currencyOptions.find(c => c.value === currency)?.label || currency;
+    const currencySymbol =
+      currencyOptions.find((c) => c.value === currency)?.label || currency;
     return `${currencySymbol}${amount.toLocaleString()}`;
   };
 
   const formatDate = (dateString: string) => {
-    return format(new Date(dateString), 'MMM yyyy');
+    return format(new Date(dateString), "MMM yyyy");
   };
 
   if (loading) {
@@ -104,7 +135,9 @@ export function SalaryList({ onEdit, onDelete, refreshTrigger }: SalaryListProps
       <Card>
         <CardContent className="text-center py-8">
           <DollarSign className="mx-auto h-12 w-12 text-gray-400" />
-          <h3 className="mt-2 text-sm font-medium text-gray-900">No salary records</h3>
+          <h3 className="mt-2 text-sm font-medium text-gray-900">
+            No salary records
+          </h3>
           <p className="mt-1 text-sm text-gray-500">
             Get started by adding your first salary record.
           </p>
@@ -120,27 +153,35 @@ export function SalaryList({ onEdit, onDelete, refreshTrigger }: SalaryListProps
           <CardHeader className="pb-3">
             <div className="flex items-start justify-between">
               <div className="flex-1">
-                <CardTitle className="text-lg">{salary.decryptedData.title}</CardTitle>
+                <CardTitle className="text-lg">
+                  {salary.decryptedData.title}
+                </CardTitle>
                 <CardDescription className="text-base font-medium text-gray-700">
                   {salary.decryptedData.company}
                 </CardDescription>
               </div>
               <div className="flex items-center space-x-2">
                 {salary.decryptedData.isCurrentPosition && (
-                  <Badge variant="secondary" className="bg-green-100 text-green-800">
+                  <Badge
+                    variant="secondary"
+                    className="bg-green-100 text-green-800"
+                  >
                     Current
                   </Badge>
                 )}
                 <div className="text-right">
                   <div className="text-lg font-semibold text-gray-900">
-                    {formatCurrency(salary.decryptedData.amount, salary.decryptedData.currency)}
+                    {formatCurrency(
+                      salary.decryptedData.amount,
+                      salary.decryptedData.currency
+                    )}
                   </div>
                   <div className="text-sm text-gray-500">per year</div>
                 </div>
               </div>
             </div>
           </CardHeader>
-          
+
           <CardContent>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
               <div className="flex items-center text-gray-600">
@@ -179,10 +220,12 @@ export function SalaryList({ onEdit, onDelete, refreshTrigger }: SalaryListProps
                 )}
               </div>
             </div>
-            
+
             {salary.decryptedData.notes && (
               <div className="mt-3 pt-3 border-t border-gray-200">
-                <p className="text-sm text-gray-600">{salary.decryptedData.notes}</p>
+                <p className="text-sm text-gray-600">
+                  {salary.decryptedData.notes}
+                </p>
               </div>
             )}
           </CardContent>
