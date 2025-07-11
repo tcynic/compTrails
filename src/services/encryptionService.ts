@@ -324,8 +324,7 @@ export class EncryptionService {
         return encryptedRecords.map(() => errorResult);
       }
 
-      // Use the salt from the first record for key derivation
-      // All records should use the same password/salt combination
+      // Check if all records use the same salt (for efficiency optimization)
       const firstRecord = encryptedRecords[0];
       const validation = this.validateEncryptedData(firstRecord);
       if (!validation.isValid) {
@@ -338,16 +337,31 @@ export class EncryptionService {
       }
 
       // Parse salt from first record
-      const salt = CryptoUtils.base64ToUint8Array(firstRecord.salt);
-
-      // Derive key once for all records
-      console.time('[EncryptionService] Key derivation');
-      const key = await KeyDerivation.deriveKey({
-        password,
-        salt,
-        ...options?.keyDerivationParams,
+      const firstSalt = CryptoUtils.base64ToUint8Array(firstRecord.salt);
+      
+      // Check if all records share the same salt
+      const saltsMatch = encryptedRecords.every(record => {
+        try {
+          const recordSalt = CryptoUtils.base64ToUint8Array(record.salt);
+          return CryptoUtils.arraysEqual(firstSalt, recordSalt);
+        } catch {
+          return false;
+        }
       });
-      console.timeEnd('[EncryptionService] Key derivation');
+
+      let sharedKey: CryptoKey | null = null;
+      if (saltsMatch) {
+        // Derive key once for all records (traditional case)
+        console.time('[EncryptionService] Shared key derivation');
+        sharedKey = await KeyDerivation.deriveKey({
+          password,
+          salt: firstSalt,
+          ...options?.keyDerivationParams,
+        });
+        console.timeEnd('[EncryptionService] Shared key derivation');
+      } else {
+        console.log('[EncryptionService] Different salts detected, will derive keys individually');
+      }
 
       // Decrypt all records in parallel using the same key
       console.time('[EncryptionService] Batch decryption');
@@ -367,23 +381,24 @@ export class EncryptionService {
             // Parse encrypted data components
             const dataBuffer = CryptoUtils.base64ToArrayBuffer(encryptedData.encryptedData);
             const iv = CryptoUtils.base64ToUint8Array(encryptedData.iv);
-            const recordSalt = CryptoUtils.base64ToUint8Array(encryptedData.salt);
-
-            // Verify salt consistency (all records should use same password)
-            if (!CryptoUtils.arraysEqual(salt, recordSalt)) {
-              console.warn(`Record ${index}: Salt mismatch, may use different password`);
-              // For mismatched salts, derive key individually (fallback)
-              const recordKey = await KeyDerivation.deriveKey({
+            
+            let keyToUse: CryptoKey;
+            
+            if (sharedKey) {
+              // Use the shared key (all records have same salt)
+              keyToUse = sharedKey;
+            } else {
+              // Derive individual key for this record (different salts)
+              const recordSalt = CryptoUtils.base64ToUint8Array(encryptedData.salt);
+              keyToUse = await KeyDerivation.deriveKey({
                 password,
                 salt: recordSalt,
                 ...options?.keyDerivationParams,
               });
-              const decryptedData = await CryptoUtils.decrypt(dataBuffer, recordKey, iv);
-              return { data: decryptedData, success: true };
             }
 
-            // Decrypt using shared key
-            const decryptedData = await CryptoUtils.decrypt(dataBuffer, key, iv);
+            // Decrypt using the appropriate key
+            const decryptedData = await CryptoUtils.decrypt(dataBuffer, keyToUse, iv);
             return { data: decryptedData, success: true };
 
           } catch (error) {
