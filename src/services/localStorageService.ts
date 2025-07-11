@@ -239,6 +239,27 @@ export class LocalStorageService {
       updatedAt: Date.now(),
     });
   }
+
+  /**
+   * Update a compensation record with its Convex ID after successful creation
+   */
+  static async updateRecordConvexId(localId: number, convexId: string): Promise<void> {
+    try {
+      await db.compensationRecords.update(localId, {
+        convexId: convexId,
+        syncStatus: 'synced',
+        lastSyncAt: Date.now(),
+        updatedAt: Date.now(),
+      });
+      console.log(`[LocalStorageService] Updated local record ${localId} with Convex ID ${convexId}`);
+    } catch (error) {
+      console.error(`[LocalStorageService] Failed to update record ${localId} with Convex ID:`, error);
+      throw new LocalStorageError(
+        `Failed to update record with Convex ID: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        'CONVEX_ID_UPDATE_FAILED'
+      );
+    }
+  }
 }
 
 // Export a singleton instance

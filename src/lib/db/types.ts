@@ -18,6 +18,7 @@ export interface CompensationRecord extends BaseRecord {
   syncStatus: 'pending' | 'synced' | 'conflict' | 'error';
   lastSyncAt?: number;
   version: number; // For conflict resolution
+  convexId?: string; // Convex database ID for synced records
 }
 
 // Pending sync operations
@@ -34,6 +35,7 @@ export interface CreateCompensationSyncData {
     salt: string;
   };
   currency: string;
+  localId?: string; // Optional local record ID for tracking after sync
 }
 
 export interface UpdateCompensationSyncData {

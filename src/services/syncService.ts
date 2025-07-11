@@ -181,22 +181,44 @@ export class SyncService {
             throw new Error('Missing data for create operation');
           }
           console.log('Offline queue create operation - data:', JSON.stringify(data, null, 2));
-          await this.convexClient.mutation(api.compensationRecords.createCompensationRecord, data as unknown as CreateCompensationSyncData);
+          const createData = data as unknown as CreateCompensationSyncData;
+          const convexId = await this.convexClient.mutation(api.compensationRecords.createCompensationRecord, createData);
+          
+          // Store the returned Convex ID in the local record if we have a localId
+          if (convexId && createData.localId) {
+            const localId = parseInt(createData.localId);
+            await LocalStorageService.updateRecordConvexId(localId, convexId);
+            console.log(`[SyncService] Stored Convex ID ${convexId} for local record ${localId} (offline queue)`);
+          }
           break;
         
         case 'update':
           if (!data) {
             throw new Error('Missing data for update operation');
           }
+          console.log('Offline queue update operation - recordId:', recordId, 'data:', JSON.stringify(data, null, 2));
+          
+          // For update operations, we need the actual Convex ID from the local record
+          const localRecord = await db.compensationRecords.get(parseInt(recordId as string));
+          if (!localRecord?.convexId) {
+            throw new Error(`Cannot update record ${recordId}: no Convex ID found`);
+          }
+          
           await this.convexClient.mutation(api.compensationRecords.updateCompensationRecord, {
-            id: recordId as Id<"compensationRecords">,
+            id: localRecord.convexId as Id<"compensationRecords">,
             ...(data as unknown as UpdateCompensationSyncData),
           });
           break;
         
         case 'delete':
+          // For delete operations, we need the actual Convex ID from the local record
+          const localRecordToDelete = await db.compensationRecords.get(parseInt(recordId as string));
+          if (!localRecordToDelete?.convexId) {
+            throw new Error(`Cannot delete record ${recordId}: no Convex ID found`);
+          }
+          
           await this.convexClient.mutation(api.compensationRecords.deleteCompensationRecord, {
-            id: recordId as Id<"compensationRecords">,
+            id: localRecordToDelete.convexId as Id<"compensationRecords">,
           });
           break;
         
@@ -376,22 +398,43 @@ export class SyncService {
             ...(item.data as unknown as CreateCompensationSyncData),
             localId: item.recordId.toString(),
           };
-          await this.convexClient.mutation(api.compensationRecords.createCompensationRecord, syncData);
+          const convexId = await this.convexClient.mutation(api.compensationRecords.createCompensationRecord, syncData);
+          
+          // Store the returned Convex ID in the local record
+          if (convexId) {
+            await LocalStorageService.updateRecordConvexId(item.recordId, convexId);
+            console.log(`[SyncService] Stored Convex ID ${convexId} for local record ${item.recordId}`);
+          }
           break;
         
         case 'update':
           if (!item.data) {
             throw new Error('Missing data for update operation');
           }
+          
+          // For update operations, we need the actual Convex ID from the local record
+          const localRecord = await db.compensationRecords.get(item.recordId);
+          if (!localRecord?.convexId) {
+            throw new Error(`Cannot update record ${item.recordId}: no Convex ID found`);
+          }
+          
+          console.log(`[SyncService] Updating Convex record ${localRecord.convexId} for local record ${item.recordId}`);
           await this.convexClient.mutation(api.compensationRecords.updateCompensationRecord, {
-            id: item.recordId.toString() as Id<"compensationRecords">,
+            id: localRecord.convexId as Id<"compensationRecords">,
             ...(item.data as unknown as UpdateCompensationSyncData),
           });
           break;
         
         case 'delete':
+          // For delete operations, we need the actual Convex ID from the local record
+          const localRecordToDelete = await db.compensationRecords.get(item.recordId);
+          if (!localRecordToDelete?.convexId) {
+            throw new Error(`Cannot delete record ${item.recordId}: no Convex ID found`);
+          }
+          
+          console.log(`[SyncService] Deleting Convex record ${localRecordToDelete.convexId} for local record ${item.recordId}`);
           await this.convexClient.mutation(api.compensationRecords.deleteCompensationRecord, {
-            id: item.recordId.toString() as Id<"compensationRecords">,
+            id: localRecordToDelete.convexId as Id<"compensationRecords">,
           });
           break;
         
@@ -662,8 +705,83 @@ export class SyncService {
       for (const item of invalidQueueItems) {
         await db.offlineQueue.delete(item.id!);
       }
+
+      // Clean up update/delete operations that reference records without Convex IDs
+      await this.cleanupInvalidUpdateDeleteOperations();
     } catch (error) {
       console.error('Error clearing invalid sync items:', error);
+    }
+  }
+
+  /**
+   * Clean up update/delete operations that cannot be processed due to missing Convex IDs
+   */
+  private static async cleanupInvalidUpdateDeleteOperations(): Promise<void> {
+    try {
+      // Get all pending update/delete operations
+      const updateDeleteItems = await db.pendingSync
+        .where('operation')
+        .anyOf(['update', 'delete'])
+        .and(item => item.status === 'pending')
+        .toArray();
+
+      console.log(`[SyncService] Checking ${updateDeleteItems.length} update/delete operations for validity`);
+
+      let removedCount = 0;
+      for (const item of updateDeleteItems) {
+        // Check if the local record exists and has a Convex ID
+        const localRecord = await db.compensationRecords.get(item.recordId);
+        
+        if (!localRecord) {
+          // Local record doesn't exist anymore, remove sync item
+          console.log(`[SyncService] Removing sync item ${item.id} - local record ${item.recordId} no longer exists`);
+          await db.pendingSync.delete(item.id!);
+          removedCount++;
+        } else if (!localRecord.convexId && item.operation !== 'create') {
+          // Record exists but has no Convex ID and it's an update/delete operation
+          console.log(`[SyncService] Removing ${item.operation} sync item ${item.id} - local record ${item.recordId} has no Convex ID`);
+          await db.pendingSync.delete(item.id!);
+          removedCount++;
+        }
+      }
+
+      if (removedCount > 0) {
+        console.log(`[SyncService] Cleaned up ${removedCount} invalid update/delete sync operations`);
+      }
+
+      // Also clean up offline queue update/delete operations
+      const offlineUpdateDeleteItems = await db.offlineQueue
+        .where('status')
+        .equals('pending')
+        .filter(item => {
+          const operation = item.data?.operation;
+          return operation === 'update' || operation === 'delete';
+        })
+        .toArray();
+
+      let offlineRemovedCount = 0;
+      for (const item of offlineUpdateDeleteItems) {
+        const recordId = item.data?.recordId;
+        if (recordId) {
+          const localRecord = await db.compensationRecords.get(parseInt(recordId as string));
+          
+          if (!localRecord) {
+            console.log(`[SyncService] Removing offline queue item ${item.id} - local record ${recordId} no longer exists`);
+            await db.offlineQueue.delete(item.id!);
+            offlineRemovedCount++;
+          } else if (!localRecord.convexId) {
+            console.log(`[SyncService] Removing offline queue ${item.data?.operation} item ${item.id} - local record ${recordId} has no Convex ID`);
+            await db.offlineQueue.delete(item.id!);
+            offlineRemovedCount++;
+          }
+        }
+      }
+
+      if (offlineRemovedCount > 0) {
+        console.log(`[SyncService] Cleaned up ${offlineRemovedCount} invalid offline queue update/delete operations`);
+      }
+    } catch (error) {
+      console.error('[SyncService] Error cleaning up invalid update/delete operations:', error);
     }
   }
 
