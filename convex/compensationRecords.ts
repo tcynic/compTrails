@@ -1,10 +1,10 @@
-import { mutation, query } from './_generated/server';
-import { v } from 'convex/values';
+import { mutation, query } from "./_generated/server";
+import { v } from "convex/values";
 
 export const createCompensationRecord = mutation({
   args: {
     userId: v.string(),
-    type: v.union(v.literal('salary'), v.literal('bonus'), v.literal('equity')),
+    type: v.union(v.literal("salary"), v.literal("bonus"), v.literal("equity")),
     encryptedData: v.object({
       data: v.string(),
       iv: v.string(),
@@ -15,27 +15,37 @@ export const createCompensationRecord = mutation({
   },
   handler: async (ctx, args) => {
     const now = Date.now();
-    
+
     // Check for potential duplicates within the last 10 minutes to prevent rapid duplicate creation
-    const tenMinutesAgo = now - (10 * 60 * 1000);
+    const tenMinutesAgo = now - 10 * 60 * 1000;
     const recentRecords = await ctx.db
-      .query('compensationRecords')
-      .withIndex('by_user_and_date', (q) => 
-        q.eq('userId', args.userId).gte('createdAt', tenMinutesAgo)
+      .query("compensationRecords")
+      .withIndex("by_user_and_date", (q) =>
+        q.eq("userId", args.userId).gte("createdAt", tenMinutesAgo)
       )
-      .filter((q) => q.eq(q.field('type'), args.type))
+      .filter((q) => q.eq(q.field("type"), args.type))
       .collect();
 
     // Check for exact duplicates based on encrypted data
-    const existingRecord = recentRecords.find(record => 
-      record.encryptedData.data === args.encryptedData.data &&
-      record.encryptedData.iv === args.encryptedData.iv &&
-      record.encryptedData.salt === args.encryptedData.salt &&
-      record.currency === args.currency
+    const existingRecord = recentRecords.find(
+      (record) =>
+        record.encryptedData.data === args.encryptedData.data &&
+        record.encryptedData.iv === args.encryptedData.iv &&
+        record.encryptedData.salt === args.encryptedData.salt &&
+        record.currency === args.currency
     );
 
     if (existingRecord) {
-      console.log(`Duplicate record detected for user ${args.userId}, returning existing record ${existingRecord._id}`);
+      console.log(
+        `Duplicate record detected for user ${args.userId}, updating lastSyncAt for record ${existingRecord._id}`
+      );
+
+      // Update the lastSyncAt timestamp for the duplicate record
+      await ctx.db.patch(existingRecord._id, {
+        lastSyncAt: now,
+        syncStatus: "synced", // Ensure sync status is updated
+      });
+
       return existingRecord._id;
     }
 
@@ -46,11 +56,11 @@ export const createCompensationRecord = mutation({
     }
 
     const { localId, ...recordData } = args;
-    return await ctx.db.insert('compensationRecords', {
+    return await ctx.db.insert("compensationRecords", {
       ...recordData,
       createdAt: now,
       updatedAt: now,
-      syncStatus: 'synced',
+      syncStatus: "synced",
       version: 1,
     });
   },
@@ -58,7 +68,7 @@ export const createCompensationRecord = mutation({
 
 export const updateCompensationRecord = mutation({
   args: {
-    id: v.id('compensationRecords'),
+    id: v.id("compensationRecords"),
     encryptedData: v.object({
       data: v.string(),
       iv: v.string(),
@@ -69,29 +79,29 @@ export const updateCompensationRecord = mutation({
   },
   handler: async (ctx, args) => {
     const { id, version, ...updates } = args;
-    
+
     const existing = await ctx.db.get(id);
     if (!existing) {
-      throw new Error('Record not found');
+      throw new Error("Record not found");
     }
-    
+
     // Simple conflict resolution: check version
     if (existing.version !== version) {
-      throw new Error('Version conflict - record has been modified');
+      throw new Error("Version conflict - record has been modified");
     }
-    
+
     return await ctx.db.patch(id, {
       ...updates,
       updatedAt: Date.now(),
       version: version + 1,
-      syncStatus: 'synced',
+      syncStatus: "synced",
     });
   },
 });
 
 export const deleteCompensationRecord = mutation({
   args: {
-    id: v.id('compensationRecords'),
+    id: v.id("compensationRecords"),
   },
   handler: async (ctx, args) => {
     return await ctx.db.delete(args.id);
@@ -101,20 +111,20 @@ export const deleteCompensationRecord = mutation({
 export const getCompensationRecords = query({
   args: {
     userId: v.string(),
-    type: v.optional(v.union(v.literal('salary'), v.literal('bonus'), v.literal('equity'))),
+    type: v.optional(
+      v.union(v.literal("salary"), v.literal("bonus"), v.literal("equity"))
+    ),
   },
   handler: async (ctx, args) => {
     let query = ctx.db
-      .query('compensationRecords')
-      .withIndex('by_user', (q) => q.eq('userId', args.userId));
-    
+      .query("compensationRecords")
+      .withIndex("by_user", (q) => q.eq("userId", args.userId));
+
     if (args.type) {
-      query = query.filter((q) => q.eq(q.field('type'), args.type));
+      query = query.filter((q) => q.eq(q.field("type"), args.type));
     }
-    
-    return await query
-      .order('desc')
-      .collect();
+
+    return await query.order("desc").collect();
   },
 });
 
@@ -124,9 +134,9 @@ export const getPendingSyncRecords = query({
   },
   handler: async (ctx, args) => {
     return await ctx.db
-      .query('compensationRecords')
-      .withIndex('by_user_and_sync_status', (q) => 
-        q.eq('userId', args.userId).eq('syncStatus', 'pending')
+      .query("compensationRecords")
+      .withIndex("by_user_and_sync_status", (q) =>
+        q.eq("userId", args.userId).eq("syncStatus", "pending")
       )
       .collect();
   },
