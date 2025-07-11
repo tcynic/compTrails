@@ -134,6 +134,83 @@ export class LocalStorageService {
   }
 
   /**
+   * Update the end date of a previous current salary and set isCurrentPosition to false
+   * Used when creating a new current salary to maintain timeline integrity
+   */
+  static async updatePreviousSalaryEndDate(
+    recordId: number,
+    endDate: string,
+    password: string
+  ): Promise<void> {
+    try {
+      // Get the existing record
+      const record = await db.compensationRecords.get(recordId);
+      if (!record) {
+        throw new Error('Previous salary record not found');
+      }
+
+      // Decrypt the existing data
+      const { EncryptionService } = await import('./encryptionService');
+      const decryptionResult = await EncryptionService.decryptData(
+        record.encryptedData,
+        password
+      );
+      
+      if (!decryptionResult.success) {
+        throw new Error(`Failed to decrypt previous salary: ${decryptionResult.error}`);
+      }
+
+      // Parse and update the salary data
+      const salaryData = JSON.parse(decryptionResult.data);
+      const updatedSalaryData = {
+        ...salaryData,
+        endDate: endDate,
+        isCurrentPosition: false, // No longer the current position
+      };
+
+      // Re-encrypt the updated data
+      const encryptedData = await EncryptionService.encryptData(
+        JSON.stringify(updatedSalaryData),
+        password
+      );
+
+      // Update the record in the database
+      const updatedRecord = {
+        ...record,
+        encryptedData,
+        updatedAt: Date.now(),
+        version: (record.version || 1) + 1,
+        syncStatus: 'pending' as const,
+      };
+
+      await db.compensationRecords.put(updatedRecord);
+
+      console.log(`[LocalStorageService] Updated previous salary ${recordId} end date to ${endDate}`);
+
+      // Add to sync queue for cloud synchronization
+      if (record.convexId) {
+        const syncData = {
+          userId: updatedRecord.userId,
+          type: updatedRecord.type,
+          encryptedData: {
+            data: updatedRecord.encryptedData.encryptedData,
+            iv: updatedRecord.encryptedData.iv,
+            salt: updatedRecord.encryptedData.salt,
+          },
+          currency: updatedRecord.currency,
+          version: updatedRecord.version,
+        };
+        await this.addToSyncQueue('update', 'compensationRecords', recordId, updatedRecord.userId, syncData);
+      }
+    } catch (error) {
+      throw new LocalStorageError(
+        `Failed to update previous salary end date: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        'UPDATE_PREVIOUS_SALARY_FAILED'
+      );
+    }
+  }
+
+  /**
    * Add an operation to the sync queue
    */
   private static async addToSyncQueue(

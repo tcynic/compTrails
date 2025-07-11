@@ -58,13 +58,19 @@ export const currencyOptions = [
 
 /**
  * Validates that only one salary can be set as current (without end date)
+ * Returns the ID of the previous current salary if found (for automatic end date setting)
  */
 export async function validateCurrentSalaryConstraint(
   userId: string,
   isCurrentPosition: boolean,
   password: string,
   editingRecordId?: number
-): Promise<{ isValid: boolean; message?: string }> {
+): Promise<{ 
+  isValid: boolean; 
+  message?: string; 
+  previousCurrentSalaryId?: number;
+  previousCurrentSalaryData?: DecryptedSalaryData;
+}> {
   if (!isCurrentPosition) {
     return { isValid: true };
   }
@@ -100,10 +106,11 @@ export async function validateCurrentSalaryConstraint(
           decryptedData.isCurrentPosition &&
           (!decryptedData.endDate || decryptedData.endDate.trim() === "")
         ) {
+          // Return the previous current salary for automatic end date setting
           return {
-            isValid: false,
-            message:
-              "You already have a current salary position. Please end your current position before adding a new one.",
+            isValid: true,
+            previousCurrentSalaryId: record.id!,
+            previousCurrentSalaryData: decryptedData,
           };
         }
       } catch (decryptionError) {

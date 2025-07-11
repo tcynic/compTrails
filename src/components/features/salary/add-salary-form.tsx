@@ -140,6 +140,30 @@ export function AddSalaryForm({
         return;
       }
 
+      // Handle automatic previous salary end date setting for new current salaries
+      if (!isEditMode && data.isCurrentPosition && validation.previousCurrentSalaryId) {
+        try {
+          // Calculate end date as one day before the new salary's start date
+          const newStartDate = new Date(data.startDate);
+          const previousEndDate = new Date(newStartDate);
+          previousEndDate.setDate(previousEndDate.getDate() - 1);
+          const endDateString = previousEndDate.toISOString().split('T')[0]; // YYYY-MM-DD format
+
+          console.log(`[AddSalaryForm] Automatically setting previous salary ${validation.previousCurrentSalaryId} end date to ${endDateString}`);
+          
+          // Update the previous current salary's end date
+          await LocalStorageService.updatePreviousSalaryEndDate(
+            validation.previousCurrentSalaryId,
+            endDateString,
+            password
+          );
+        } catch (error) {
+          console.error('Failed to update previous salary end date:', error);
+          // Don't block the new salary creation if this fails
+          alert('Warning: Could not automatically end the previous salary. You may need to manually set its end date.');
+        }
+      }
+
       // Encrypt the sensitive data
       const encryptedData = await EncryptionService.encryptData(
         JSON.stringify(data),
