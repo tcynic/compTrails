@@ -38,22 +38,35 @@ export function EquityList() {
         return;
       }
       
-      const decryptedEquityGrants = await Promise.all(
-        records.map(async (record) => {
+      // Use batch decryption for better performance
+      console.time('[EquityList] Batch decryption');
+      const encryptedDataArray = records.map(record => record.encryptedData);
+      const decryptResults = await EncryptionService.batchDecryptData(
+        encryptedDataArray,
+        password
+      );
+      console.timeEnd('[EquityList] Batch decryption');
+
+      const decryptedEquityGrants = records.map((record, index) => {
+        const decryptResult = decryptResults[index];
+        if (decryptResult.success) {
           try {
-            const decryptionResult = await EncryptionService.decryptData(record.encryptedData, password);
-            if (!decryptionResult.success) {
-              console.error('Failed to decrypt equity record:', decryptionResult.error);
-              return null;
-            }
-            const decryptedData = JSON.parse(decryptionResult.data) as DecryptedEquityData;
+            const decryptedData = JSON.parse(
+              decryptResult.data
+            ) as DecryptedEquityData;
             return { ...record, decryptedData };
           } catch (error) {
-            console.error('Failed to decrypt equity record:', error);
+            console.error("Error parsing decrypted equity data:", error);
             return null;
           }
-        })
-      );
+        } else {
+          console.error(
+            "Error decrypting equity record:",
+            decryptResult.error
+          );
+          return null;
+        }
+      });
       
       setEquityGrants(decryptedEquityGrants.filter(Boolean) as Array<CompensationRecord & { decryptedData: DecryptedEquityData }>);
     } catch (error) {

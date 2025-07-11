@@ -55,31 +55,35 @@ export function SalaryList({
         return;
       }
 
-      const decryptedRecords = await Promise.all(
-        records.map(async (record) => {
+      // Use batch decryption for better performance
+      console.time('[SalaryList] Batch decryption');
+      const encryptedDataArray = records.map(record => record.encryptedData);
+      const decryptResults = await EncryptionService.batchDecryptData(
+        encryptedDataArray,
+        password
+      );
+      console.timeEnd('[SalaryList] Batch decryption');
+
+      const decryptedRecords = records.map((record, index) => {
+        const decryptResult = decryptResults[index];
+        if (decryptResult.success) {
           try {
-            const decryptResult = await EncryptionService.decryptData(
-              record.encryptedData,
-              password
-            );
-            if (decryptResult.success) {
-              const decryptedData = JSON.parse(
-                decryptResult.data
-              ) as DecryptedSalaryData;
-              return { ...record, decryptedData };
-            } else {
-              console.error(
-                "Error decrypting salary record:",
-                decryptResult.error
-              );
-              return null;
-            }
+            const decryptedData = JSON.parse(
+              decryptResult.data
+            ) as DecryptedSalaryData;
+            return { ...record, decryptedData };
           } catch (error) {
-            console.error("Error decrypting salary record:", error);
+            console.error("Error parsing decrypted salary data:", error);
             return null;
           }
-        })
-      );
+        } else {
+          console.error(
+            "Error decrypting salary record:",
+            decryptResult.error
+          );
+          return null;
+        }
+      });
 
       // Sort salaries by start date (newest to oldest)
       const sortedSalaries = (

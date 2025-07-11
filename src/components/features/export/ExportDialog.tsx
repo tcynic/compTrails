@@ -67,22 +67,36 @@ export function ExportDialog({ isOpen, onClose, preselectedType = 'all' }: Expor
         // Decrypt all records
         const decryptedRecords: ExportRecord[] = [];
         
-        for (const record of [...salaries, ...bonuses, ...equity]) {
-          try {
-            const decryptionResult = await EncryptionService.decryptData(record.encryptedData, password);
-            if (decryptionResult.success) {
-              const data = JSON.parse(decryptionResult.data);
-              decryptedRecords.push({
-                id: record.id!,
-                type: record.type,
-                data,
-                createdAt: record.createdAt,
-                currency: record.currency,
-              });
+        // Use batch decryption for better performance
+        const allRecords = [...salaries, ...bonuses, ...equity];
+        if (allRecords.length > 0) {
+          console.time('[ExportDialog] Batch decryption');
+          const encryptedDataArray = allRecords.map(record => record.encryptedData);
+          const decryptResults = await EncryptionService.batchDecryptData(
+            encryptedDataArray,
+            password
+          );
+          console.timeEnd('[ExportDialog] Batch decryption');
+
+          allRecords.forEach((record, index) => {
+            const decryptResult = decryptResults[index];
+            if (decryptResult.success) {
+              try {
+                const data = JSON.parse(decryptResult.data);
+                decryptedRecords.push({
+                  id: record.id!,
+                  type: record.type,
+                  data,
+                  createdAt: record.createdAt,
+                  currency: record.currency,
+                });
+              } catch (error) {
+                console.error('Error parsing decrypted export record:', error);
+              }
+            } else {
+              console.error('Failed to decrypt export record:', decryptResult.error);
             }
-          } catch (error) {
-            console.error('Failed to decrypt record:', error);
-          }
+          });
         }
 
         // Sort by creation date (newest first)

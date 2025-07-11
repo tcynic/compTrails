@@ -38,22 +38,35 @@ export function BonusList() {
         return;
       }
       
-      const decryptedBonuses = await Promise.all(
-        records.map(async (record) => {
+      // Use batch decryption for better performance
+      console.time('[BonusList] Batch decryption');
+      const encryptedDataArray = records.map(record => record.encryptedData);
+      const decryptResults = await EncryptionService.batchDecryptData(
+        encryptedDataArray,
+        password
+      );
+      console.timeEnd('[BonusList] Batch decryption');
+
+      const decryptedBonuses = records.map((record, index) => {
+        const decryptResult = decryptResults[index];
+        if (decryptResult.success) {
           try {
-            const decryptionResult = await EncryptionService.decryptData(record.encryptedData, password);
-            if (!decryptionResult.success) {
-              console.error('Failed to decrypt bonus record:', decryptionResult.error);
-              return null;
-            }
-            const decryptedData = JSON.parse(decryptionResult.data) as DecryptedBonusData;
+            const decryptedData = JSON.parse(
+              decryptResult.data
+            ) as DecryptedBonusData;
             return { ...record, decryptedData };
           } catch (error) {
-            console.error('Failed to decrypt bonus record:', error);
+            console.error("Error parsing decrypted bonus data:", error);
             return null;
           }
-        })
-      );
+        } else {
+          console.error(
+            "Error decrypting bonus record:",
+            decryptResult.error
+          );
+          return null;
+        }
+      });
       
       setBonuses(decryptedBonuses.filter(Boolean) as Array<CompensationRecord & { decryptedData: DecryptedBonusData }>);
     } catch (error) {

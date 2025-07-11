@@ -301,6 +301,116 @@ export class EncryptionService {
   }
 
   /**
+   * Batch decrypts multiple records using a single key derivation
+   * This is much more efficient than individual decrypts when processing many records
+   */
+  static async batchDecryptData(
+    encryptedRecords: EncryptedData[],
+    password: string,
+    options?: EncryptionOptions
+  ): Promise<DecryptionResult[]> {
+    if (!encryptedRecords.length) {
+      return [];
+    }
+
+    try {
+      // Validate password
+      if (!password || password.length < 8) {
+        const errorResult = {
+          data: '',
+          success: false,
+          error: 'Password must be at least 8 characters long',
+        };
+        return encryptedRecords.map(() => errorResult);
+      }
+
+      // Use the salt from the first record for key derivation
+      // All records should use the same password/salt combination
+      const firstRecord = encryptedRecords[0];
+      const validation = this.validateEncryptedData(firstRecord);
+      if (!validation.isValid) {
+        const errorResult = {
+          data: '',
+          success: false,
+          error: `Invalid encrypted data: ${validation.errors.join(', ')}`,
+        };
+        return encryptedRecords.map(() => errorResult);
+      }
+
+      // Parse salt from first record
+      const salt = CryptoUtils.base64ToUint8Array(firstRecord.salt);
+
+      // Derive key once for all records
+      console.time('[EncryptionService] Key derivation');
+      const key = await KeyDerivation.deriveKey({
+        password,
+        salt,
+        ...options?.keyDerivationParams,
+      });
+      console.timeEnd('[EncryptionService] Key derivation');
+
+      // Decrypt all records in parallel using the same key
+      console.time('[EncryptionService] Batch decryption');
+      const results = await Promise.all(
+        encryptedRecords.map(async (encryptedData, index) => {
+          try {
+            // Validate each record
+            const validation = this.validateEncryptedData(encryptedData);
+            if (!validation.isValid) {
+              return {
+                data: '',
+                success: false,
+                error: `Record ${index}: ${validation.errors.join(', ')}`,
+              };
+            }
+
+            // Parse encrypted data components
+            const dataBuffer = CryptoUtils.base64ToArrayBuffer(encryptedData.encryptedData);
+            const iv = CryptoUtils.base64ToUint8Array(encryptedData.iv);
+            const recordSalt = CryptoUtils.base64ToUint8Array(encryptedData.salt);
+
+            // Verify salt consistency (all records should use same password)
+            if (!CryptoUtils.arraysEqual(salt, recordSalt)) {
+              console.warn(`Record ${index}: Salt mismatch, may use different password`);
+              // For mismatched salts, derive key individually (fallback)
+              const recordKey = await KeyDerivation.deriveKey({
+                password,
+                salt: recordSalt,
+                ...options?.keyDerivationParams,
+              });
+              const decryptedData = await CryptoUtils.decrypt(dataBuffer, recordKey, iv);
+              return { data: decryptedData, success: true };
+            }
+
+            // Decrypt using shared key
+            const decryptedData = await CryptoUtils.decrypt(dataBuffer, key, iv);
+            return { data: decryptedData, success: true };
+
+          } catch (error) {
+            return {
+              data: '',
+              success: false,
+              error: error instanceof Error ? error.message : 'Decryption failed',
+            };
+          }
+        })
+      );
+      console.timeEnd('[EncryptionService] Batch decryption');
+
+      console.log(`[EncryptionService] Batch decrypted ${encryptedRecords.length} records`);
+      return results;
+
+    } catch (error) {
+      const errorResult = {
+        data: '',
+        success: false,
+        error: error instanceof Error ? error.message : 'Batch decryption failed',
+      };
+      return encryptedRecords.map(() => errorResult);
+    }
+  }
+
+  /**
    * Generates a secure random password
    */
   static generateSecurePassword(length: number = 16): string {
