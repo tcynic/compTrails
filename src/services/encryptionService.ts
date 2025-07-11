@@ -477,6 +477,97 @@ export class EncryptionService {
     
     return password.join('');
   }
+
+  /**
+   * Identifies and optionally removes corrupted records that fail decryption
+   * Used to clean up records encrypted with old passwords or corrupted data
+   */
+  static async auditAndCleanupCorruptedRecords(
+    encryptedRecords: Array<{ encryptedData: EncryptedData; id: number; index: number }>,
+    password: string,
+    options?: {
+      dryRun?: boolean; // Only identify, don't delete
+      maxFailures?: number; // Max corrupted records to tolerate (default: 1)
+      onCorruptedFound?: (corruptedRecords: Array<{ id: number; index: number; error: string }>) => void;
+    }
+  ): Promise<{
+    totalRecords: number;
+    successfulRecords: number;
+    corruptedRecords: Array<{ id: number; index: number; error: string }>;
+    cleanedUp: boolean;
+  }> {
+    const { dryRun = true, maxFailures = 1, onCorruptedFound } = options || {};
+    const corruptedRecords: Array<{ id: number; index: number; error: string }> = [];
+
+    console.log(`[EncryptionService] Auditing ${encryptedRecords.length} records for corruption...`);
+
+    // Test each record individually
+    for (const { encryptedData, id, index } of encryptedRecords) {
+      try {
+        const result = await this.decryptData(encryptedData, password);
+        if (!result.success) {
+          corruptedRecords.push({
+            id,
+            index,
+            error: result.error || 'Unknown decryption error'
+          });
+          console.warn(`[EncryptionService] Corrupted record found - ID: ${id}, Index: ${index}, Error: ${result.error}`);
+        }
+      } catch (error) {
+        corruptedRecords.push({
+          id,
+          index,
+          error: error instanceof Error ? error.message : 'Decryption exception'
+        });
+        console.warn(`[EncryptionService] Corrupted record found - ID: ${id}, Index: ${index}, Exception: ${error}`);
+      }
+    }
+
+    const successfulRecords = encryptedRecords.length - corruptedRecords.length;
+    
+    console.log(`[EncryptionService] Audit complete: ${successfulRecords}/${encryptedRecords.length} records valid`);
+
+    // Notify callback if corrupted records found
+    if (corruptedRecords.length > 0 && onCorruptedFound) {
+      onCorruptedFound(corruptedRecords);
+    }
+
+    // Determine if cleanup should proceed
+    const shouldCleanup = !dryRun && corruptedRecords.length > 0 && corruptedRecords.length <= maxFailures;
+    let cleanedUp = false;
+
+    if (shouldCleanup) {
+      try {
+        // Import LocalStorageService dynamically to avoid circular dependencies
+        const { LocalStorageService } = await import('./localStorageService');
+        
+        console.warn(`[EncryptionService] Cleaning up ${corruptedRecords.length} corrupted records...`);
+        
+        for (const corrupted of corruptedRecords) {
+          try {
+            await LocalStorageService.deleteCompensationRecord(corrupted.id);
+            console.log(`[EncryptionService] Deleted corrupted record ID: ${corrupted.id}`);
+          } catch (deleteError) {
+            console.error(`[EncryptionService] Failed to delete corrupted record ID: ${corrupted.id}`, deleteError);
+          }
+        }
+        
+        cleanedUp = true;
+        console.log(`[EncryptionService] Cleanup complete: ${corruptedRecords.length} corrupted records removed`);
+      } catch (error) {
+        console.error('[EncryptionService] Cleanup failed:', error);
+      }
+    } else if (corruptedRecords.length > maxFailures) {
+      console.warn(`[EncryptionService] Too many corrupted records (${corruptedRecords.length}), cleanup skipped. Manual intervention may be required.`);
+    }
+
+    return {
+      totalRecords: encryptedRecords.length,
+      successfulRecords,
+      corruptedRecords,
+      cleanedUp
+    };
+  }
 }
 
 // Export a singleton instance

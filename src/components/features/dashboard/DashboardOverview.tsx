@@ -123,6 +123,8 @@ export function DashboardOverview() {
           );
           console.timeEnd('[DashboardOverview] Batch decryption');
 
+          // Check for decryption failures and attempt cleanup
+          const failedRecords: Array<{ encryptedData: any; id: number; index: number }> = [];
           allRecords.forEach((record, index) => {
             const decryptResult = decryptResults[index];
             if (decryptResult.success) {
@@ -140,8 +142,40 @@ export function DashboardOverview() {
               }
             } else {
               console.error('Failed to decrypt dashboard record:', decryptResult.error);
+              failedRecords.push({ 
+                encryptedData: record.encryptedData, 
+                id: record.id!, 
+                index 
+              });
             }
           });
+
+          // If we have corrupted records, attempt automatic cleanup
+          if (failedRecords.length > 0) {
+            console.warn(`[DashboardOverview] Found ${failedRecords.length} corrupted records, attempting cleanup...`);
+            try {
+              const auditResult = await EncryptionService.auditAndCleanupCorruptedRecords(
+                failedRecords,
+                password,
+                {
+                  dryRun: false, // Actually delete the corrupted records
+                  maxFailures: 2, // Allow up to 2 corrupted records to be cleaned up
+                  onCorruptedFound: (corrupted) => {
+                    console.warn('[DashboardOverview] Corrupted records identified:', 
+                      corrupted.map(r => `ID ${r.id} (${r.error})`).join(', ')
+                    );
+                  }
+                }
+              );
+              
+              if (auditResult.cleanedUp) {
+                console.log(`[DashboardOverview] Cleanup successful: ${auditResult.corruptedRecords.length} records removed`);
+                // Note: Page will need refresh to see updated data
+              }
+            } catch (cleanupError) {
+              console.error('[DashboardOverview] Cleanup failed:', cleanupError);
+            }
+          }
         }
       }
 
