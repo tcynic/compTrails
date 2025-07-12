@@ -1,84 +1,31 @@
 'use client';
 
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useMemo } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Plus, Search, Filter, Calendar, TrendingUp } from 'lucide-react';
-import { useAuth } from '@/contexts/AuthContext';
-import { useSecurePassword } from '@/hooks/usePassword';
-import { LocalStorageService } from '@/services/localStorageService';
-import { EncryptionService } from '@/services/encryptionService';
+import { useEquityData } from '@/hooks/useCompensationData';
 import { AddEquityForm } from './AddEquityForm';
-import type { CompensationRecord, DecryptedEquityData } from '@/lib/db/types';
+import type { DecryptedEquityData } from '@/lib/db/types';
 import { equityTypeOptions } from '@/lib/validations/equity';
 import { format, differenceInMonths, addMonths } from 'date-fns';
 
 export function EquityList() {
-  const [equityGrants, setEquityGrants] = useState<Array<CompensationRecord & { decryptedData: DecryptedEquityData }>>([]);
-  const [isLoading, setIsLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterType, setFilterType] = useState<string>('all');
   const [showAddForm, setShowAddForm] = useState(false);
-  const { user } = useAuth();
-  const password = useSecurePassword();
+  
+  // LOCAL-FIRST: Use the new equity data hook
+  // This loads from IndexedDB immediately, provides instant UI updates,
+  // and handles background sync automatically
+  const { data: equityGrants, loading: isLoading, refetch } = useEquityData({
+    autoRefresh: true,
+    backgroundSync: true,
+  });
 
-  const loadEquityGrants = useCallback(async () => {
-    if (!user) return;
-    
-    setIsLoading(true);
-    try {
-      const records = await LocalStorageService.getCompensationRecords(user.id, 'equity');
-      
-      // Get user's master password from secure context
-      if (!password) {
-        console.warn('Password not available, cannot decrypt data');
-        return;
-      }
-      
-      // Use batch decryption for better performance
-      console.time('[EquityList] Batch decryption');
-      const encryptedDataArray = records.map(record => record.encryptedData);
-      const decryptResults = await EncryptionService.batchDecryptData(
-        encryptedDataArray,
-        password
-      );
-      console.timeEnd('[EquityList] Batch decryption');
-
-      const decryptedEquityGrants = records.map((record, index) => {
-        const decryptResult = decryptResults[index];
-        if (decryptResult.success) {
-          try {
-            const decryptedData = JSON.parse(
-              decryptResult.data
-            ) as DecryptedEquityData;
-            return { ...record, decryptedData };
-          } catch (error) {
-            console.error("Error parsing decrypted equity data:", error);
-            return null;
-          }
-        } else {
-          console.error(
-            "Error decrypting equity record:",
-            decryptResult.error
-          );
-          return null;
-        }
-      });
-      
-      setEquityGrants(decryptedEquityGrants.filter(Boolean) as Array<CompensationRecord & { decryptedData: DecryptedEquityData }>);
-    } catch (error) {
-      console.error('Error loading equity grants:', error);
-    } finally {
-      setIsLoading(false);
-    }
-  }, [user, password]);
-
-  useEffect(() => {
-    loadEquityGrants();
-  }, [loadEquityGrants]);
 
   const filteredEquityGrants = useMemo(() => {
     return equityGrants.filter(grant => {
@@ -411,7 +358,7 @@ export function EquityList() {
       <AddEquityForm
         isOpen={showAddForm}
         onClose={() => setShowAddForm(false)}
-        onSuccess={loadEquityGrants}
+        onSuccess={refetch}
       />
     </div>
   );

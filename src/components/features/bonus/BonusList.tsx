@@ -1,84 +1,30 @@
 'use client';
 
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useMemo } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Plus, Search, Filter } from 'lucide-react';
-import { useAuth } from '@/contexts/AuthContext';
-import { useSecurePassword } from '@/hooks/usePassword';
-import { LocalStorageService } from '@/services/localStorageService';
-import { EncryptionService } from '@/services/encryptionService';
+import { useBonusData } from '@/hooks/useCompensationData';
 import { AddBonusForm } from './AddBonusForm';
-import type { CompensationRecord, DecryptedBonusData } from '@/lib/db/types';
 import { bonusTypeOptions } from '@/lib/validations/bonus';
 import { format } from 'date-fns';
 
 export function BonusList() {
-  const [bonuses, setBonuses] = useState<Array<CompensationRecord & { decryptedData: DecryptedBonusData }>>([]);
-  const [isLoading, setIsLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterType, setFilterType] = useState<string>('all');
   const [showAddForm, setShowAddForm] = useState(false);
-  const { user } = useAuth();
-  const password = useSecurePassword();
+  
+  // LOCAL-FIRST: Use the new bonus data hook
+  // This loads from IndexedDB immediately, provides instant UI updates,
+  // and handles background sync automatically
+  const { data: bonuses, loading: isLoading, refetch } = useBonusData({
+    autoRefresh: true,
+    backgroundSync: true,
+  });
 
-  const loadBonuses = useCallback(async () => {
-    if (!user) return;
-    
-    setIsLoading(true);
-    try {
-      const records = await LocalStorageService.getCompensationRecords(user.id, 'bonus');
-      
-      // Get user's master password from secure context
-      if (!password) {
-        console.warn('Password not available, cannot decrypt data');
-        return;
-      }
-      
-      // Use batch decryption for better performance
-      console.time('[BonusList] Batch decryption');
-      const encryptedDataArray = records.map(record => record.encryptedData);
-      const decryptResults = await EncryptionService.batchDecryptData(
-        encryptedDataArray,
-        password
-      );
-      console.timeEnd('[BonusList] Batch decryption');
-
-      const decryptedBonuses = records.map((record, index) => {
-        const decryptResult = decryptResults[index];
-        if (decryptResult.success) {
-          try {
-            const decryptedData = JSON.parse(
-              decryptResult.data
-            ) as DecryptedBonusData;
-            return { ...record, decryptedData };
-          } catch (error) {
-            console.error("Error parsing decrypted bonus data:", error);
-            return null;
-          }
-        } else {
-          console.error(
-            "Error decrypting bonus record:",
-            decryptResult.error
-          );
-          return null;
-        }
-      });
-      
-      setBonuses(decryptedBonuses.filter(Boolean) as Array<CompensationRecord & { decryptedData: DecryptedBonusData }>);
-    } catch (error) {
-      console.error('Error loading bonuses:', error);
-    } finally {
-      setIsLoading(false);
-    }
-  }, [user, password]);
-
-  useEffect(() => {
-    loadBonuses();
-  }, [loadBonuses]);
 
   const filteredBonuses = useMemo(() => {
     return bonuses.filter(bonus => {
@@ -303,7 +249,7 @@ export function BonusList() {
       <AddBonusForm
         isOpen={showAddForm}
         onClose={() => setShowAddForm(false)}
-        onSuccess={loadBonuses}
+        onSuccess={refetch}
       />
     </div>
   );
