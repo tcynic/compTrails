@@ -1,6 +1,6 @@
 # Total Compensation Calculator - Architecture Documentation
 
-**Version:** 1.0  
+**Version:** 2.0  
 **Date:** July 2025  
 **Audience:** Junior Software Engineers
 
@@ -113,6 +113,7 @@ graph TB
         SyncService[Sync Service]
         CryptoService[Crypto Service]
         StorageService[Storage Service]
+        ValidationService[Validation Service]
         OfflineService[Offline Service]
     end
     
@@ -138,7 +139,10 @@ graph TB
     ConvexHooks --> SyncService
     SyncService --> CryptoService
     SyncService --> StorageService
+    SyncService --> ValidationService
     SyncService --> OfflineService
+    ValidationService --> CryptoService
+    ValidationService --> StorageService
     
     StorageService --> IndexedDB
     StorageService --> MemoryCache
@@ -156,7 +160,7 @@ graph TB
     
     class Pages,Components,Hooks ui
     class Zustand,ConvexHooks,LocalState state
-    class SyncService,CryptoService,StorageService,OfflineService service
+    class SyncService,CryptoService,StorageService,ValidationService,OfflineService service
     class IndexedDB,MemoryCache,ServiceWorker data
     class ConvexClient,WorkOSAuth,PostHogClient external
 ```
@@ -175,9 +179,10 @@ graph TB
 
 #### 3. **Services Layer**
 - **Sync Service**: Handles syncing data between local and cloud
-- **Crypto Service**: Encrypts/decrypts sensitive data
-- **Storage Service**: Manages local data storage
-- **Offline Service**: Handles offline functionality
+- **Crypto Service**: Encrypts/decrypts sensitive data with corruption detection
+- **Storage Service**: Manages local data storage with automatic timeline management
+- **Validation Service**: Enforces business rules and data integrity constraints
+- **Offline Service**: Handles offline functionality and background sync
 
 #### 4. **Data Layer**
 - **IndexedDB**: Browser database for local storage
@@ -192,19 +197,34 @@ graph TB
 sequenceDiagram
     participant User
     participant UI as React UI
+    participant Form as Salary Form
+    participant Validation as Validation Service
     participant Store as Zustand Store
     participant Sync as Sync Service
     participant Crypto as Crypto Service
     participant Local as IndexedDB
     participant Cloud as Convex DB
     
-    User->>UI: Add new salary record
-    UI->>Store: Update local state
+    User->>UI: Add new current salary
+    UI->>Form: Open salary form
+    Form->>Validation: Validate current salary constraint
+    Validation->>Local: Check existing current salaries
+    Validation->>Crypto: Decrypt existing records
+    Validation->>Form: Return previous current salary ID
+    
+    Form->>Store: Update local state (optimistic)
     Store->>UI: Re-render with new data
     
-    par Local Storage
-        Store->>Sync: Queue sync operation
-        Sync->>Crypto: Encrypt sensitive data
+    par Automatic Timeline Management
+        Form->>Local: Update previous salary end date
+        Local->>Crypto: Decrypt previous salary
+        Crypto->>Local: Return decrypted data
+        Local->>Crypto: Re-encrypt with end date
+        Crypto->>Local: Return updated encrypted data
+        Local->>Local: Save updated previous salary
+    and New Salary Storage
+        Form->>Sync: Queue new salary sync
+        Sync->>Crypto: Encrypt new salary data
         Crypto->>Sync: Return encrypted data
         Sync->>Local: Save to IndexedDB
     and Cloud Sync
@@ -214,16 +234,25 @@ sequenceDiagram
         Cloud->>Sync: Confirm saved
     end
     
-    Note over User,Cloud: User sees instant update, sync happens in background
+    Note over User,Cloud: Timeline automatically managed, instant UI updates
 ```
 
 ### Sync Process Explained:
 
 1. **User Action**: User adds/edits compensation data
-2. **Immediate UI Update**: App shows changes instantly (optimistic update)
-3. **Local Storage**: Data saved to IndexedDB immediately
-4. **Background Sync**: Data encrypted and sent to cloud
-5. **Conflict Resolution**: If conflicts occur, last-write-wins
+2. **Smart Validation**: Check for existing current salaries and business rules
+3. **Automatic Timeline Management**: Update previous salary end dates automatically
+4. **Immediate UI Update**: App shows changes instantly (optimistic update)
+5. **Local Storage**: Data saved to IndexedDB immediately with encryption
+6. **Background Sync**: Data encrypted and sent to cloud
+7. **Conflict Resolution**: If conflicts occur, last-write-wins with version tracking
+
+### Enhanced Features:
+
+- **Salary Timeline Integrity**: Automatically manages salary start/end dates
+- **Corruption Detection**: Identifies and cleans up corrupted encrypted records
+- **Smart Validation**: Prevents data inconsistencies before they occur
+- **Audit Trail**: Complete history of all changes with versioning
 
 ### Why this approach?
 
@@ -231,6 +260,7 @@ sequenceDiagram
 - **Reliable**: Data saved locally first, so nothing is lost
 - **Offline Support**: Works even without internet
 - **Multi-device**: Changes sync across all your devices
+- **Data Integrity**: Automatic timeline management prevents gaps/overlaps
 
 ---
 
@@ -689,13 +719,25 @@ const Dashboard = () => {
 // Separate business logic from UI
 class SyncService {
   static async saveCompensation(data: CompensationData) {
-    // 1. Encrypt data
+    // 1. Validate business rules
+    const validation = await ValidationService.validate(data);
+    if (!validation.isValid) throw new Error(validation.message);
+    
+    // 2. Handle automatic timeline management
+    if (data.type === 'salary' && data.isCurrentPosition && validation.previousCurrentSalaryId) {
+      await StorageService.updatePreviousSalaryEndDate(
+        validation.previousCurrentSalaryId,
+        calculateEndDate(data.startDate)
+      );
+    }
+    
+    // 3. Encrypt data
     const encrypted = await CryptoService.encrypt(data);
     
-    // 2. Save locally
+    // 4. Save locally
     await StorageService.save(encrypted);
     
-    // 3. Sync to cloud
+    // 5. Sync to cloud
     await this.syncToCloud(encrypted);
   }
 }
@@ -720,6 +762,81 @@ const ErrorBoundary = ({ children }) => {
 };
 ```
 
+### 7. **Advanced Features & Patterns**
+
+#### **Automatic Salary Timeline Management**
+```typescript
+// When creating a new current salary, automatically end the previous one
+const handleNewCurrentSalary = async (newSalaryData) => {
+  // 1. Find existing current salary
+  const validation = await validateCurrentSalaryConstraint(
+    userId, 
+    true, // isCurrentPosition
+    password
+  );
+  
+  // 2. If found, automatically set its end date
+  if (validation.previousCurrentSalaryId) {
+    const endDate = calculateEndDate(newSalaryData.startDate); // One day before
+    await LocalStorageService.updatePreviousSalaryEndDate(
+      validation.previousCurrentSalaryId,
+      endDate,
+      password
+    );
+  }
+  
+  // 3. Save new salary
+  await saveNewSalary(newSalaryData);
+};
+```
+
+#### **Corruption Detection & Recovery**
+```typescript
+// Automatic cleanup of corrupted encrypted records
+const auditAndCleanupCorruptedRecords = async (
+  records: EncryptedRecord[],
+  password: string
+) => {
+  const failedRecords = [];
+  
+  for (const record of records) {
+    try {
+      await EncryptionService.decryptData(record.encryptedData, password);
+    } catch (error) {
+      console.error(`Corrupted record detected: ${record.id}`);
+      failedRecords.push(record);
+    }
+  }
+  
+  // Safety limit: only clean up 2 records per session
+  if (failedRecords.length > 0 && failedRecords.length <= 2) {
+    for (const record of failedRecords) {
+      await LocalStorageService.deleteCompensationRecord(record.id!);
+    }
+  }
+};
+```
+
+#### **Smart Validation with Business Rules**
+```typescript
+// Enforce business constraints before data persistence
+export async function validateCurrentSalaryConstraint(
+  userId: string,
+  isCurrentPosition: boolean,
+  password: string,
+  editingRecordId?: number
+): Promise<{
+  isValid: boolean;
+  message?: string;
+  previousCurrentSalaryId?: number;
+  previousCurrentSalaryData?: DecryptedSalaryData;
+}> {
+  // Only one current salary allowed
+  // Returns previous current salary info for automatic timeline management
+  // Handles encryption/decryption errors gracefully
+}
+```
+
 ---
 
 This architecture documentation provides a comprehensive overview of how the Total Compensation Calculator is built. The key takeaway is that we've prioritized user experience, privacy, and performance through careful architectural decisions like local-first data, zero-knowledge encryption, and edge computing.
@@ -730,5 +847,8 @@ For junior engineers, focus on understanding these core concepts:
 3. **Service layers** (separation of concerns)
 4. **Security by design** (encryption first)
 5. **Progressive enhancement** (works offline)
+6. **Business rule validation** (data integrity)
+7. **Automatic error recovery** (corruption handling)
+8. **Timeline management** (automatic relationship handling)
 
-Each of these patterns and technologies serves a specific purpose in creating a fast, secure, and reliable application.
+Each of these patterns and technologies serves a specific purpose in creating a fast, secure, and reliable application. The advanced features like automatic timeline management and corruption recovery demonstrate how thoughtful architecture can prevent user frustration and data inconsistencies.

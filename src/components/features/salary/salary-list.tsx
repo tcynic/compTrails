@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -11,21 +11,16 @@ import {
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Edit, Trash2, MapPin, Calendar, DollarSign } from "lucide-react";
-import { useAuth } from "@/contexts/AuthContext";
-import { useSecurePassword } from "@/hooks/usePassword";
-import { LocalStorageService } from "@/services/localStorageService";
-import { EncryptionService } from "@/services/encryptionService";
+import { useSalaryData } from "@/hooks/useCompensationData";
 import { format } from "date-fns";
-import type { CompensationRecord, DecryptedSalaryData } from "@/lib/db/types";
 import { currencyOptions } from "@/lib/validations/salary";
 
-interface DecryptedSalaryRecord extends CompensationRecord {
-  decryptedData: DecryptedSalaryData;
-}
+// Use the type from the hook which already includes decryptedData
+type SalaryRecord = ReturnType<typeof useSalaryData>['data'][0];
 
 interface SalaryListProps {
-  onEdit?: (record: DecryptedSalaryRecord) => void;
-  onDelete?: (record: DecryptedSalaryRecord) => void;
+  onEdit?: (record: SalaryRecord) => void;
+  onDelete?: (record: SalaryRecord) => void;
   refreshTrigger?: number;
 }
 
@@ -34,77 +29,20 @@ export function SalaryList({
   onDelete,
   refreshTrigger,
 }: SalaryListProps) {
-  const [salaries, setSalaries] = useState<DecryptedSalaryRecord[]>([]);
-  const [loading, setLoading] = useState(true);
-  const { user } = useAuth();
-  const password = useSecurePassword();
+  // LOCAL-FIRST: Use the new salary data hook
+  // This loads from IndexedDB immediately, provides instant UI updates,
+  // and handles background sync automatically
+  const { data: salaries, loading, refetch } = useSalaryData({
+    autoRefresh: true,
+    backgroundSync: true,
+  });
 
-  const loadSalaries = useCallback(async () => {
-    if (!user) return;
-
-    try {
-      setLoading(true);
-      const records = await LocalStorageService.getCompensationRecords(
-        user.id,
-        "salary"
-      );
-
-      // Get user's master password from secure context
-      if (!password) {
-        console.warn("Password not available, cannot decrypt data");
-        return;
-      }
-
-      // Use batch decryption for better performance
-      console.time('[SalaryList] Batch decryption');
-      const encryptedDataArray = records.map(record => record.encryptedData);
-      const decryptResults = await EncryptionService.batchDecryptData(
-        encryptedDataArray,
-        password
-      );
-      console.timeEnd('[SalaryList] Batch decryption');
-
-      const decryptedRecords = records.map((record, index) => {
-        const decryptResult = decryptResults[index];
-        if (decryptResult.success) {
-          try {
-            const decryptedData = JSON.parse(
-              decryptResult.data
-            ) as DecryptedSalaryData;
-            return { ...record, decryptedData };
-          } catch (error) {
-            console.error("Error parsing decrypted salary data:", error);
-            return null;
-          }
-        } else {
-          console.error(
-            "Error decrypting salary record:",
-            decryptResult.error
-          );
-          return null;
-        }
-      });
-
-      // Sort salaries by start date (newest to oldest)
-      const sortedSalaries = (
-        decryptedRecords.filter(Boolean) as DecryptedSalaryRecord[]
-      ).sort((a, b) => {
-        const dateA = new Date(a.decryptedData.startDate);
-        const dateB = new Date(b.decryptedData.startDate);
-        return dateB.getTime() - dateA.getTime(); // Newest first
-      });
-
-      setSalaries(sortedSalaries);
-    } catch (error) {
-      console.error("Error loading salaries:", error);
-    } finally {
-      setLoading(false);
-    }
-  }, [user, password]);
-
+  // Handle external refresh trigger
   useEffect(() => {
-    loadSalaries();
-  }, [user, refreshTrigger, loadSalaries]);
+    if (refreshTrigger) {
+      refetch();
+    }
+  }, [refreshTrigger, refetch]);
 
   const formatCurrency = (amount: number, currency: string) => {
     const currencySymbol =

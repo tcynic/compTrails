@@ -17,7 +17,6 @@ import {
 import { LocalStorageService } from '@/services/localStorageService';
 import { AnalyticsService } from '@/services/analyticsService';
 import { Plus, Trash2 } from 'lucide-react';
-import type { CompensationRecord, DecryptedSalaryData } from '@/lib/db/types';
 
 // Lazy load heavy salary components
 const AddSalaryForm = dynamic(() => import('@/components/features/salary/add-salary-form').then(mod => ({ default: mod.AddSalaryForm })), {
@@ -28,9 +27,8 @@ const SalaryList = dynamic(() => import('@/components/features/salary/salary-lis
   loading: () => <div className="animate-pulse h-32 bg-gray-200 rounded-lg"></div>,
 });
 
-interface DecryptedSalaryRecord extends CompensationRecord {
-  decryptedData: DecryptedSalaryData;
-}
+// Import the type from the updated SalaryList component
+type DecryptedSalaryRecord = ReturnType<typeof import('@/hooks/useCompensationData').useSalaryData>['data'][0];
 
 export default function SalaryPage() {
   const [showAddForm, setShowAddForm] = useState(false);
