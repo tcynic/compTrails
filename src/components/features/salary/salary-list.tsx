@@ -14,6 +14,7 @@ import { Edit, Trash2, MapPin, Calendar, DollarSign } from "lucide-react";
 import { useSalaryData } from "@/hooks/useCompensationData";
 import { format } from "date-fns";
 import { currencyOptions } from "@/lib/validations/salary";
+import type { DecryptedSalaryData } from "@/lib/db/types";
 
 // Use the type from the hook which already includes decryptedData
 type SalaryRecord = ReturnType<typeof useSalaryData>['data'][0];
@@ -90,20 +91,23 @@ export function SalaryList({
 
   return (
     <div className="space-y-4">
-      {salaries.map((salary) => (
-        <Card key={salary.id} className="hover:shadow-md transition-shadow">
-          <CardHeader className="pb-3">
-            <div className="flex items-start justify-between">
-              <div className="flex-1">
-                <CardTitle className="text-lg">
-                  {salary.decryptedData.title}
-                </CardTitle>
-                <CardDescription className="text-base font-medium text-gray-700">
-                  {salary.decryptedData.company}
-                </CardDescription>
-              </div>
+      {salaries.map((salary) => {
+        // Type assertion since we know these are salary records from useSalaryData
+        const salaryData = salary.decryptedData as DecryptedSalaryData;
+        return (
+          <Card key={salary.id} className="hover:shadow-md transition-shadow">
+            <CardHeader className="pb-3">
+              <div className="flex items-start justify-between">
+                <div className="flex-1">
+                  <CardTitle className="text-lg">
+                    {salaryData.title}
+                  </CardTitle>
+                  <CardDescription className="text-base font-medium text-gray-700">
+                    {salaryData.company}
+                  </CardDescription>
+                </div>
               <div className="flex items-center space-x-2">
-                {salary.decryptedData.isCurrentPosition && (
+                {salaryData.isCurrentPosition && (
                   <Badge
                     variant="secondary"
                     className="bg-green-100 text-green-800"
@@ -114,8 +118,8 @@ export function SalaryList({
                 <div className="text-right">
                   <div className="text-lg font-semibold text-gray-900">
                     {formatCurrency(
-                      salary.decryptedData.amount,
-                      salary.decryptedData.currency
+                      salaryData.amount,
+                      salaryData.currency
                     )}
                   </div>
                   <div className="text-sm text-gray-500">per year</div>
@@ -128,13 +132,13 @@ export function SalaryList({
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
               <div className="flex items-center text-gray-600">
                 <MapPin className="h-4 w-4 mr-2" />
-                {salary.decryptedData.location}
+                {salaryData.location}
               </div>
               <div className="flex items-center text-gray-600">
                 <Calendar className="h-4 w-4 mr-2" />
-                {formatDate(salary.decryptedData.startDate)}
-                {salary.decryptedData.endDate && (
-                  <span> - {formatDate(salary.decryptedData.endDate)}</span>
+                {formatDate(salaryData.startDate)}
+                {salaryData.endDate && (
+                  <span> - {formatDate(salaryData.endDate)}</span>
                 )}
               </div>
               <div className="flex items-center justify-end space-x-2">
@@ -163,16 +167,17 @@ export function SalaryList({
               </div>
             </div>
 
-            {salary.decryptedData.notes && (
+            {salaryData.notes && (
               <div className="mt-3 pt-3 border-t border-gray-200">
                 <p className="text-sm text-gray-600">
-                  {salary.decryptedData.notes}
+                  {salaryData.notes}
                 </p>
               </div>
             )}
           </CardContent>
         </Card>
-      ))}
+        );
+      })}
     </div>
   );
 }

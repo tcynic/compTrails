@@ -29,10 +29,12 @@ export function EquityList() {
 
   const filteredEquityGrants = useMemo(() => {
     return equityGrants.filter(grant => {
+      // Type assertion since we know these are equity records from useEquityData
+      const equityData = grant.decryptedData as DecryptedEquityData;
       const matchesSearch = searchTerm === '' || 
-        grant.decryptedData.company.toLowerCase().includes(searchTerm.toLowerCase());
+        equityData.company.toLowerCase().includes(searchTerm.toLowerCase());
       
-      const matchesType = filterType === 'all' || grant.decryptedData.type === filterType;
+      const matchesType = filterType === 'all' || equityData.type === filterType;
       
       return matchesSearch && matchesType;
     });
@@ -40,7 +42,8 @@ export function EquityList() {
 
   const equityGrantsByCompany = useMemo(() => {
     const grouped = filteredEquityGrants.reduce((acc, grant) => {
-      const company = grant.decryptedData.company;
+      const equityData = grant.decryptedData as DecryptedEquityData;
+      const company = equityData.company;
       if (!acc[company]) acc[company] = [];
       acc[company].push(grant);
       return acc;
@@ -48,9 +51,11 @@ export function EquityList() {
 
     // Sort each company's grants by grant date (newest first)
     Object.keys(grouped).forEach(company => {
-      grouped[company].sort((a, b) => 
-        new Date(b.decryptedData.grantDate).getTime() - new Date(a.decryptedData.grantDate).getTime()
-      );
+      grouped[company].sort((a, b) => {
+        const aData = a.decryptedData as DecryptedEquityData;
+        const bData = b.decryptedData as DecryptedEquityData;
+        return new Date(bData.grantDate).getTime() - new Date(aData.grantDate).getTime();
+      });
     });
 
     return grouped;
@@ -135,8 +140,9 @@ export function EquityList() {
 
   const totalSummary = useMemo(() => {
     return filteredEquityGrants.reduce((acc, grant) => {
-      const vesting = calculateVestingProgress(grant.decryptedData);
-      acc.totalShares += grant.decryptedData.shares;
+      const equityData = grant.decryptedData as DecryptedEquityData;
+      const vesting = calculateVestingProgress(equityData);
+      acc.totalShares += equityData.shares;
       acc.vestedShares += vesting.vestedShares;
       acc.unvestedShares += vesting.unvestedShares;
       return acc;
@@ -256,7 +262,8 @@ export function EquityList() {
               
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {companyGrants.map((grant) => {
-                  const vesting = calculateVestingProgress(grant.decryptedData);
+                  const equityData = grant.decryptedData as DecryptedEquityData;
+                  const vesting = calculateVestingProgress(equityData);
                   return (
                     <Card key={grant.id} className="hover:shadow-md transition-shadow">
                       <CardHeader className="pb-3">
@@ -264,14 +271,14 @@ export function EquityList() {
                           <div>
                             <CardTitle className="text-lg flex items-center gap-2">
                               <TrendingUp className="h-5 w-5" />
-                              {grant.decryptedData.shares.toLocaleString()} shares
+                              {equityData.shares.toLocaleString()} shares
                             </CardTitle>
                             <p className="text-sm text-gray-500">
-                              Granted {format(new Date(grant.decryptedData.grantDate), 'MMM dd, yyyy')}
+                              Granted {format(new Date(equityData.grantDate), 'MMM dd, yyyy')}
                             </p>
                           </div>
-                          <Badge className={getEquityTypeBadgeColor(grant.decryptedData.type)}>
-                            {grant.decryptedData.type}
+                          <Badge className={getEquityTypeBadgeColor(equityData.type)}>
+                            {equityData.type}
                           </Badge>
                         </div>
                       </CardHeader>
@@ -299,29 +306,29 @@ export function EquityList() {
                           <div className="text-sm space-y-1">
                             <div className="flex justify-between">
                               <span className="text-gray-600">Vesting Start:</span>
-                              <span>{format(new Date(grant.decryptedData.vestingStart), 'MMM dd, yyyy')}</span>
+                              <span>{format(new Date(equityData.vestingStart), 'MMM dd, yyyy')}</span>
                             </div>
                             <div className="flex justify-between">
                               <span className="text-gray-600">Vesting Period:</span>
-                              <span>{grant.decryptedData.vestingPeriod} months</span>
+                              <span>{equityData.vestingPeriod} months</span>
                             </div>
                             <div className="flex justify-between">
                               <span className="text-gray-600">Frequency:</span>
-                              <span className="capitalize">{grant.decryptedData.vestingFrequency}</span>
+                              <span className="capitalize">{equityData.vestingFrequency}</span>
                             </div>
-                            {grant.decryptedData.vestingCliff && (
+                            {equityData.vestingCliff && (
                               <div className="flex justify-between">
                                 <span className="text-gray-600">Cliff:</span>
-                                <span>{grant.decryptedData.vestingCliff} months</span>
+                                <span>{equityData.vestingCliff} months</span>
                               </div>
                             )}
                           </div>
 
                           {/* Strike Price */}
-                          {grant.decryptedData.strikePrice && (
+                          {equityData.strikePrice && (
                             <div className="text-sm">
                               <span className="text-gray-600">Strike Price: </span>
-                              <span className="font-medium">${grant.decryptedData.strikePrice}</span>
+                              <span className="font-medium">${equityData.strikePrice}</span>
                             </div>
                           )}
 
@@ -341,8 +348,8 @@ export function EquityList() {
                           )}
 
                           {/* Notes */}
-                          {grant.decryptedData.notes && (
-                            <p className="text-xs text-gray-500 mt-2">{grant.decryptedData.notes}</p>
+                          {equityData.notes && (
+                            <p className="text-xs text-gray-500 mt-2">{equityData.notes}</p>
                           )}
                         </div>
                       </CardContent>

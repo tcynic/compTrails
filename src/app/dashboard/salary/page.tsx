@@ -27,8 +27,17 @@ const SalaryList = dynamic(() => import('@/components/features/salary/salary-lis
   loading: () => <div className="animate-pulse h-32 bg-gray-200 rounded-lg"></div>,
 });
 
-// Import the type from the updated SalaryList component
-type DecryptedSalaryRecord = ReturnType<typeof import('@/hooks/useCompensationData').useSalaryData>['data'][0];
+// Import the hook and required types
+import { useSalaryData } from '@/hooks/useCompensationData';
+import type { DecryptedSalaryData, CompensationRecord } from '@/lib/db/types';
+
+// Create a properly typed salary record interface that matches AddSalaryForm expectations
+interface DecryptedSalaryRecord extends CompensationRecord {
+  decryptedData: DecryptedSalaryData;
+}
+
+// Type alias for hook return type
+type HookSalaryRecord = ReturnType<typeof useSalaryData>['data'][0];
 
 export default function SalaryPage() {
   const [showAddForm, setShowAddForm] = useState(false);
@@ -66,8 +75,9 @@ export default function SalaryPage() {
     setRefreshTrigger(prev => prev + 1);
   };
 
-  const handleEdit = (record: DecryptedSalaryRecord) => {
-    setEditRecord(record);
+  const handleEdit = (record: HookSalaryRecord) => {
+    // Convert hook record to form-compatible record
+    setEditRecord(record as DecryptedSalaryRecord);
   };
 
   const handleDeleteSalary = async () => {
@@ -121,7 +131,7 @@ export default function SalaryPage() {
           refreshTrigger={refreshTrigger}
           onEdit={handleEdit}
           onDelete={(record) => {
-            setDeleteRecord(record);
+            setDeleteRecord(record as DecryptedSalaryRecord);
           }}
         />
 

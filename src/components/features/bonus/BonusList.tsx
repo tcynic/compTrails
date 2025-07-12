@@ -11,6 +11,7 @@ import { useBonusData } from '@/hooks/useCompensationData';
 import { AddBonusForm } from './AddBonusForm';
 import { bonusTypeOptions } from '@/lib/validations/bonus';
 import { format } from 'date-fns';
+import type { DecryptedBonusData } from '@/lib/db/types';
 
 export function BonusList() {
   const [searchTerm, setSearchTerm] = useState('');
@@ -28,11 +29,13 @@ export function BonusList() {
 
   const filteredBonuses = useMemo(() => {
     return bonuses.filter(bonus => {
+      // Type assertion since we know these are bonus records from useBonusData
+      const bonusData = bonus.decryptedData as DecryptedBonusData;
       const matchesSearch = searchTerm === '' || 
-        bonus.decryptedData.company.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        bonus.decryptedData.description.toLowerCase().includes(searchTerm.toLowerCase());
+        bonusData.company.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        bonusData.description.toLowerCase().includes(searchTerm.toLowerCase());
       
-      const matchesType = filterType === 'all' || bonus.decryptedData.type === filterType;
+      const matchesType = filterType === 'all' || bonusData.type === filterType;
       
       return matchesSearch && matchesType;
     });
@@ -40,7 +43,8 @@ export function BonusList() {
 
   const bonusesByYear = useMemo(() => {
     const grouped = filteredBonuses.reduce((acc, bonus) => {
-      const year = new Date(bonus.decryptedData.date).getFullYear();
+      const bonusData = bonus.decryptedData as DecryptedBonusData;
+      const year = new Date(bonusData.date).getFullYear();
       if (!acc[year]) acc[year] = [];
       acc[year].push(bonus);
       return acc;
@@ -48,9 +52,11 @@ export function BonusList() {
 
     // Sort each year's bonuses by date (newest first)
     Object.keys(grouped).forEach(year => {
-      grouped[Number(year)].sort((a, b) => 
-        new Date(b.decryptedData.date).getTime() - new Date(a.decryptedData.date).getTime()
-      );
+      grouped[Number(year)].sort((a, b) => {
+        const aData = a.decryptedData as DecryptedBonusData;
+        const bData = b.decryptedData as DecryptedBonusData;
+        return new Date(bData.date).getTime() - new Date(aData.date).getTime();
+      });
     });
 
     return grouped;
@@ -63,11 +69,12 @@ export function BonusList() {
       totals[Number(year)] = {};
       
       yearBonuses.forEach(bonus => {
-        const currency = bonus.decryptedData.currency;
+        const bonusData = bonus.decryptedData as DecryptedBonusData;
+        const currency = bonusData.currency;
         if (!totals[Number(year)][currency]) {
           totals[Number(year)][currency] = 0;
         }
-        totals[Number(year)][currency] += bonus.decryptedData.amount;
+        totals[Number(year)][currency] += bonusData.amount;
       });
     });
     
@@ -207,39 +214,42 @@ export function BonusList() {
                 </div>
                 
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                  {yearBonuses.map((bonus) => (
-                    <Card key={bonus.id} className="hover:shadow-md transition-shadow">
-                      <CardHeader className="pb-3">
-                        <div className="flex justify-between items-start">
-                          <div>
-                            <CardTitle className="text-lg">{bonus.decryptedData.company}</CardTitle>
-                            <p className="text-sm text-gray-500">
-                              {format(new Date(bonus.decryptedData.date), 'MMM dd, yyyy')}
-                            </p>
+                  {yearBonuses.map((bonus) => {
+                    const bonusData = bonus.decryptedData as DecryptedBonusData;
+                    return (
+                      <Card key={bonus.id} className="hover:shadow-md transition-shadow">
+                        <CardHeader className="pb-3">
+                          <div className="flex justify-between items-start">
+                            <div>
+                              <CardTitle className="text-lg">{bonusData.company}</CardTitle>
+                              <p className="text-sm text-gray-500">
+                                {format(new Date(bonusData.date), 'MMM dd, yyyy')}
+                              </p>
+                            </div>
+                            <Badge className={getBonusTypeBadgeColor(bonusData.type)}>
+                              {bonusTypeOptions.find(opt => opt.value === bonusData.type)?.label}
+                            </Badge>
                           </div>
-                          <Badge className={getBonusTypeBadgeColor(bonus.decryptedData.type)}>
-                            {bonusTypeOptions.find(opt => opt.value === bonus.decryptedData.type)?.label}
-                          </Badge>
-                        </div>
-                      </CardHeader>
-                      <CardContent>
-                        <div className="space-y-2">
-                          <div className="text-2xl font-bold text-green-600">
-                            {formatCurrency(bonus.decryptedData.amount, bonus.decryptedData.currency)}
+                        </CardHeader>
+                        <CardContent>
+                          <div className="space-y-2">
+                            <div className="text-2xl font-bold text-green-600">
+                              {formatCurrency(bonusData.amount, bonusData.currency)}
+                            </div>
+                            <p className="text-sm text-gray-600">{bonusData.description}</p>
+                            {bonusData.payrollDate && (
+                              <p className="text-xs text-gray-500">
+                                Payroll: {format(new Date(bonusData.payrollDate), 'MMM dd, yyyy')}
+                              </p>
+                            )}
+                            {bonusData.notes && (
+                              <p className="text-xs text-gray-500">{bonusData.notes}</p>
+                            )}
                           </div>
-                          <p className="text-sm text-gray-600">{bonus.decryptedData.description}</p>
-                          {bonus.decryptedData.payrollDate && (
-                            <p className="text-xs text-gray-500">
-                              Payroll: {format(new Date(bonus.decryptedData.payrollDate), 'MMM dd, yyyy')}
-                            </p>
-                          )}
-                          {bonus.decryptedData.notes && (
-                            <p className="text-xs text-gray-500">{bonus.decryptedData.notes}</p>
-                          )}
-                        </div>
-                      </CardContent>
-                    </Card>
-                  ))}
+                        </CardContent>
+                      </Card>
+                    );
+                  })}
                 </div>
               </div>
             ))}
