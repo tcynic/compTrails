@@ -68,14 +68,16 @@ export function PasswordProvider({ children, user }: PasswordProviderProps) {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [keyDerivedForUser, setKeyDerivedForUser] = useState<string | null>(null);
 
-  // Automatically derive key when user is authenticated
+  // Automatically derive key when user is authenticated (only once per user session)
   useEffect(() => {
     const deriveKeyFromUser = async () => {
       if (!user) {
         // Clear session when user logs out
         PasswordService.clearSessionPassword();
         setIsAuthenticated(false);
+        setKeyDerivedForUser(null);
         setPasswordState({
           isSet: false,
           hashedFingerprint: null,
@@ -85,29 +87,43 @@ export function PasswordProvider({ children, user }: PasswordProviderProps) {
         return;
       }
 
+      // Check if we already have a valid session for this user
+      const currentUserKey = `${user.id}:${user.email}`;
+      if (keyDerivedForUser === currentUserKey) {
+        // Key already derived for this user, check if session is still valid
+        const isSessionValid = PasswordService.isSessionValid();
+        if (isSessionValid) {
+          console.log('Using existing encryption key for user:', currentUserKey);
+          return;
+        }
+      }
+
       try {
-        console.log('Deriving encryption key from user authentication');
+        console.log('Deriving encryption key from user authentication for user:', currentUserKey);
         const result = await PasswordService.deriveKeyFromAuth(user);
         
         if (result.success) {
           const state = PasswordService.getMasterPasswordState();
           setPasswordState(state);
           setIsAuthenticated(true);
+          setKeyDerivedForUser(currentUserKey);
           setError(null);
-          console.log('Encryption key derived successfully');
+          console.log('Encryption key derived successfully for user:', currentUserKey);
         } else {
           setError(result.error || 'Failed to derive encryption key');
           setIsAuthenticated(false);
+          setKeyDerivedForUser(null);
         }
       } catch (err) {
         console.error('Failed to derive encryption key:', err);
         setError('Failed to initialize encryption system');
         setIsAuthenticated(false);
+        setKeyDerivedForUser(null);
       }
     };
 
     deriveKeyFromUser();
-  }, [user]);
+  }, [user, keyDerivedForUser]);
 
   // Initialize password state on mount
   useEffect(() => {

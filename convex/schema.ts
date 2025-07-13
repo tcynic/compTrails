@@ -21,6 +21,8 @@ export default defineSchema({
     currency: v.string(),
     createdAt: v.number(),
     updatedAt: v.number(),
+    // Client-side deduplication
+    localId: v.optional(v.string()), // Client-side identifier for deduplication
     // Sync management
     syncStatus: v.union(v.literal("pending"), v.literal("synced"), v.literal("conflict"), v.literal("error")),
     lastSyncAt: v.optional(v.number()),

@@ -16,17 +16,17 @@ export const createCompensationRecord = mutation({
   handler: async (ctx, args) => {
     const now = Date.now();
 
-    // Check for potential duplicates within the last 10 minutes to prevent rapid duplicate creation
-    const tenMinutesAgo = now - 10 * 60 * 1000;
+    // Check for potential duplicates within the last 24 hours to prevent duplicate creation
+    const twentyFourHoursAgo = now - 24 * 60 * 60 * 1000;
     const recentRecords = await ctx.db
       .query("compensationRecords")
       .withIndex("by_user_and_date", (q) =>
-        q.eq("userId", args.userId).gte("createdAt", tenMinutesAgo)
+        q.eq("userId", args.userId).gte("createdAt", twentyFourHoursAgo)
       )
       .filter((q) => q.eq(q.field("type"), args.type))
       .collect();
 
-    // Check for exact duplicates based on encrypted data
+    // Check for exact duplicates based on encrypted data content
     const existingRecord = recentRecords.find(
       (record) =>
         record.encryptedData.data === args.encryptedData.data &&
@@ -34,6 +34,33 @@ export const createCompensationRecord = mutation({
         record.encryptedData.salt === args.encryptedData.salt &&
         record.currency === args.currency
     );
+
+    // Also check for potential duplicates with same data but different encryption metadata
+    // This catches cases where the same content was encrypted multiple times
+    if (!existingRecord && recentRecords.length > 0) {
+      // Check for records with identical data length (strong indicator of duplicate content)
+      const sameDataLengthRecord = recentRecords.find(
+        (record) =>
+          record.encryptedData.data.length === args.encryptedData.data.length &&
+          record.currency === args.currency &&
+          // Additional check: same creation time window (within 5 minutes)
+          Math.abs(record.createdAt - now) < 5 * 60 * 1000
+      );
+
+      if (sameDataLengthRecord) {
+        console.log(
+          `Potential duplicate detected with same data length for user ${args.userId}, updating existing record ${sameDataLengthRecord._id}`
+        );
+        
+        // Update the existing record's sync timestamp
+        await ctx.db.patch(sameDataLengthRecord._id, {
+          lastSyncAt: now,
+          syncStatus: "synced",
+        });
+
+        return sameDataLengthRecord._id;
+      }
+    }
 
     if (existingRecord) {
       console.log(
@@ -51,13 +78,35 @@ export const createCompensationRecord = mutation({
 
     // If localId is provided, check for records with the same localId (client-side deduplication)
     if (args.localId) {
-      // Note: We don't store localId in the database, but we can use it for deduplication during sync
-      // In a production system, you might want to add a localId field to track client-side IDs
+      // Check for existing records with the same localId from this session
+      const localIdRecord = recentRecords.find(
+        (record) => 
+          record.localId === args.localId ||
+          // Also check if we have any record created very recently (same sync batch)
+          (Math.abs(record.createdAt - now) < 30 * 1000) // Within 30 seconds
+      );
+
+      if (localIdRecord) {
+        console.log(
+          `Record with localId ${args.localId} already exists for user ${args.userId}, returning existing record ${localIdRecord._id}`
+        );
+        
+        // Update the existing record's sync timestamp
+        await ctx.db.patch(localIdRecord._id, {
+          lastSyncAt: now,
+          syncStatus: "synced",
+        });
+
+        return localIdRecord._id;
+      }
     }
 
-    const { localId, ...recordData } = args;
     return await ctx.db.insert("compensationRecords", {
-      ...recordData,
+      userId: args.userId,
+      type: args.type,
+      encryptedData: args.encryptedData,
+      currency: args.currency,
+      localId: args.localId,
       createdAt: now,
       updatedAt: now,
       syncStatus: "synced",

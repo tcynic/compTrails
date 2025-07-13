@@ -15,10 +15,108 @@ export class LocalStorageError extends Error {
 
 export class LocalStorageService {
   /**
-   * Add a compensation record
+   * Generate a content fingerprint for a compensation record to detect duplicates
+   */
+  static generateRecordFingerprint(record: {
+    userId: string;
+    type: CompensationType;
+    encryptedData: {
+      encryptedData: string;
+      iv: string;
+      salt: string;
+    };
+    currency: string;
+  }): string {
+    // Create a deterministic hash based on content that should be unique
+    const fingerprintData = [
+      record.userId,
+      record.type,
+      record.currency,
+      record.encryptedData.encryptedData, // Encrypted content
+      record.encryptedData.salt, // Salt ensures same data encrypted differently still matches
+    ].join('|');
+    
+    // Use a simple hash function for fingerprinting
+    let hash = 0;
+    for (let i = 0; i < fingerprintData.length; i++) {
+      const char = fingerprintData.charCodeAt(i);
+      hash = ((hash << 5) - hash) + char;
+      hash = hash & hash; // Convert to 32-bit integer
+    }
+    
+    return hash.toString(36); // Base-36 encoding for shorter string
+  }
+
+  /**
+   * Check for duplicate records based on content fingerprint
+   */
+  static async checkForDuplicates(
+    record: {
+      userId: string;
+      type: CompensationType;
+      encryptedData: {
+        encryptedData: string;
+        iv: string;
+        salt: string;
+      };
+      currency: string;
+    },
+    timeWindowMs: number = 24 * 60 * 60 * 1000 // 24 hours default
+  ): Promise<CompensationRecord | null> {
+    try {
+      const fingerprint = this.generateRecordFingerprint(record);
+      const now = Date.now();
+      const cutoffTime = now - timeWindowMs;
+      
+      // Check for records with the same fingerprint in the time window
+      const recentRecords = await db.compensationRecords
+        .where('userId')
+        .equals(record.userId)
+        .and(r => r.type === record.type && r.createdAt > cutoffTime)
+        .toArray();
+      
+      // Look for exact content matches
+      for (const existingRecord of recentRecords) {
+        const existingFingerprint = this.generateRecordFingerprint({
+          userId: existingRecord.userId,
+          type: existingRecord.type,
+          encryptedData: existingRecord.encryptedData,
+          currency: existingRecord.currency,
+        });
+        
+        if (fingerprint === existingFingerprint) {
+          console.log(`Duplicate record detected with fingerprint ${fingerprint}`);
+          return existingRecord;
+        }
+      }
+      
+      return null;
+    } catch (error) {
+      console.error('Error checking for duplicates:', error);
+      return null;
+    }
+  }
+
+  /**
+   * Add a compensation record with duplicate detection
    */
   static async addCompensationRecord(record: Omit<CompensationRecord, 'id'>): Promise<number> {
     try {
+      // Check for duplicates before adding
+      const duplicate = await this.checkForDuplicates({
+        userId: record.userId,
+        type: record.type,
+        encryptedData: record.encryptedData,
+        currency: record.currency,
+      });
+      
+      if (duplicate) {
+        console.log(`Preventing duplicate record creation, returning existing record ID: ${duplicate.id}`);
+        // Update the sync timestamp on the existing record
+        await this.updateRecordSyncStatus(duplicate.id!, 'pending');
+        return duplicate.id!;
+      }
+      
       const id = await db.compensationRecords.add(record as CompensationRecord);
       
       // Add to sync queue if not already synced
@@ -334,6 +432,29 @@ export class LocalStorageService {
       throw new LocalStorageError(
         `Failed to update record with Convex ID: ${error instanceof Error ? error.message : 'Unknown error'}`,
         'CONVEX_ID_UPDATE_FAILED'
+      );
+    }
+  }
+
+  /**
+   * Update the sync status of a record
+   */
+  static async updateRecordSyncStatus(
+    recordId: number, 
+    syncStatus: 'pending' | 'synced' | 'conflict' | 'error'
+  ): Promise<void> {
+    try {
+      await db.compensationRecords.update(recordId, {
+        syncStatus,
+        lastSyncAt: Date.now(),
+        updatedAt: Date.now(),
+      });
+      console.log(`[LocalStorageService] Updated record ${recordId} sync status to ${syncStatus}`);
+    } catch (error) {
+      console.error(`[LocalStorageService] Failed to update record ${recordId} sync status:`, error);
+      throw new LocalStorageError(
+        `Failed to update record sync status: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        'SYNC_STATUS_UPDATE_FAILED'
       );
     }
   }
