@@ -131,9 +131,29 @@ export function useCompensationData(
       }
     });
     
-    // Filter out failed decryptions and sort by creation date (newest first)
+    // Filter out failed decryptions and apply proper sorting
     const validRecords = (decryptedRecords.filter(Boolean) as DecryptedCompensationRecord[])
-      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+      .sort((a, b) => {
+        // For salary records, implement business-specific sorting
+        if (type === 'salary' && a.decryptedData && b.decryptedData) {
+          const aData = a.decryptedData as any; // DecryptedSalaryData
+          const bData = b.decryptedData as any; // DecryptedSalaryData
+          
+          // Primary sort: Current salary always comes first
+          if (aData.isCurrentPosition && !bData.isCurrentPosition) return -1;
+          if (!aData.isCurrentPosition && bData.isCurrentPosition) return 1;
+          
+          // Secondary sort: For non-current salaries, sort by start date (newest first)
+          if (!aData.isCurrentPosition && !bData.isCurrentPosition) {
+            if (aData.startDate && bData.startDate) {
+              return new Date(bData.startDate).getTime() - new Date(aData.startDate).getTime();
+            }
+          }
+        }
+        
+        // Fallback sort: By creation date (newest first) for all other cases
+        return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+      });
     
     return validRecords;
   }, [stableUserId, password, type]);
