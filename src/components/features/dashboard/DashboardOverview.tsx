@@ -16,8 +16,7 @@ import {
   Activity,
   Download
 } from 'lucide-react';
-// Removed: import { useCompensationData } from '@/hooks/useCompensationData'; - now using global state
-import { useGlobalLoadingState } from '@/hooks/useGlobalLoadingState';
+import { useCompensationSummaries, SummaryUtils, type SalarySummary, type BonusSummary, type EquitySummary } from '@/hooks/useCompensationSummaries';
 import { useAnalytics } from '@/hooks/useAnalytics';
 import { HistoryLoadingScreen } from '@/components/ui/HistoryLoadingScreen';
 import { useState } from 'react';
@@ -26,11 +25,6 @@ import { useState } from 'react';
 const ExportDialog = dynamic(() => import('../export').then(mod => ({ default: mod.ExportDialog })), {
   loading: () => null,
 });
-import type { 
-  DecryptedSalaryData, 
-  DecryptedBonusData, 
-  DecryptedEquityData 
-} from '@/lib/db/types';
 import { format } from 'date-fns';
 
 export function DashboardOverview() {
@@ -38,54 +32,34 @@ export function DashboardOverview() {
   const { trackPageView } = useAnalytics();
   const router = useRouter();
 
-  // GLOBAL LOADING STATE: Use centralized state to avoid duplicate hook instances
-  const globalLoadingState = useGlobalLoadingState();
-  
-  // Use data from global state to prevent redundant operations
-  const allRecords = globalLoadingState.allData;
-  const isLoading = globalLoadingState.isInitialLoading;
+  // OPTIMIZED SUMMARIES: Use summary hook for faster dashboard loading
+  const { summaries, loading: isLoading, error } = useCompensationSummaries();
 
   // Track page view once on mount
   useEffect(() => {
     trackPageView('dashboard_overview');
   }, [trackPageView]);
 
-  // Calculate current salary
+  // Calculate current salary using optimized summaries
   const currentSalary = useMemo(() => {
-    const salaryRecords = allRecords
-      .filter(r => r.type === 'salary')
-      .map(r => r.decryptedData as DecryptedSalaryData)
-      .filter(s => s.isCurrentPosition);
-    
-    return salaryRecords.length > 0 ? salaryRecords[0] : null;
-  }, [allRecords]);
+    return SummaryUtils.getCurrentSalary(summaries);
+  }, [summaries]);
 
-  // Calculate YTD bonuses
+  // Calculate YTD bonuses using optimized summaries
   const ytdBonuses = useMemo(() => {
-    const currentYear = new Date().getFullYear();
-    const bonusRecords = allRecords
-      .filter(r => r.type === 'bonus')
-      .map(r => r.decryptedData as DecryptedBonusData)
-      .filter(b => new Date(b.date).getFullYear() === currentYear);
-
-    const totalsByCurrency = bonusRecords.reduce((acc, bonus) => {
-      if (!acc[bonus.currency]) acc[bonus.currency] = 0;
-      acc[bonus.currency] += bonus.amount;
-      return acc;
-    }, {} as Record<string, number>);
+    const bonusRecords = SummaryUtils.getYTDBonuses(summaries);
+    const totalsByCurrency = SummaryUtils.calculateBonusTotals(bonusRecords);
 
     return {
       count: bonusRecords.length,
       totalsByCurrency: totalsByCurrency,
       records: bonusRecords,
     };
-  }, [allRecords]);
+  }, [summaries]);
 
-  // Calculate equity summary
+  // Calculate equity summary using optimized summaries
   const equitySummary = useMemo(() => {
-    const equityRecords = allRecords
-      .filter(r => r.type === 'equity')
-      .map(r => r.decryptedData as DecryptedEquityData);
+    const equityRecords = SummaryUtils.getEquitySummaries(summaries);
 
     const summary = equityRecords.reduce((acc, equity) => {
       acc.totalShares += equity.shares;
@@ -113,7 +87,7 @@ export function DashboardOverview() {
       unvestedShares: summary.totalShares - summary.vestedShares,
       count: equityRecords.length,
     };
-  }, [allRecords]);
+  }, [summaries]);
 
   // Calculate total compensation (simplified)
   const totalCompensation = useMemo(() => {
@@ -138,10 +112,10 @@ export function DashboardOverview() {
     };
   }, [currentSalary, ytdBonuses, equitySummary]);
 
-  // Recent activity (last 5 records)
+  // Recent activity (last 5 records) using optimized summaries
   const recentActivity = useMemo(() => {
-    return allRecords.slice(0, 5);
-  }, [allRecords]);
+    return summaries.slice(0, 5);
+  }, [summaries]);
 
   const formatCurrency = (amount: number, currency: string) => {
     return new Intl.NumberFormat('en-US', {
@@ -150,26 +124,26 @@ export function DashboardOverview() {
     }).format(amount);
   };
 
-  const getRecordDisplayInfo = (record: typeof allRecords[0]) => {
+  const getRecordDisplayInfo = (record: typeof summaries[0]) => {
     switch (record.type) {
       case 'salary':
-        const salary = record.decryptedData as DecryptedSalaryData;
+        const salary = record as SalarySummary;
         return {
           title: `${salary.title} at ${salary.company}`,
           amount: formatCurrency(salary.amount, salary.currency),
           type: 'Salary',
         };
       case 'bonus':
-        const bonus = record.decryptedData as DecryptedBonusData;
+        const bonus = record as BonusSummary;
         return {
-          title: `${bonus.type} bonus from ${bonus.company}`,
+          title: `${bonus.bonusType} bonus from ${bonus.company}`,
           amount: formatCurrency(bonus.amount, bonus.currency),
           type: 'Bonus',
         };
       case 'equity':
-        const equity = record.decryptedData as DecryptedEquityData;
+        const equity = record as EquitySummary;
         return {
-          title: `${equity.shares.toLocaleString()} ${equity.type} shares from ${equity.company}`,
+          title: `${equity.shares.toLocaleString()} ${equity.equityType} shares from ${equity.company}`,
           amount: `${equity.shares.toLocaleString()} shares`,
           type: 'Equity',
         };
@@ -182,27 +156,28 @@ export function DashboardOverview() {
     }
   };
 
-  // Show global loading screen for initial data load
-  if (globalLoadingState.isInitialLoading) {
-    const loadingMessages = {
-      querying: `Loading your compensation history...`,
-      decrypting: `Decrypting ${globalLoadingState.recordCounts.total} records...`,
-      processing: `Processing your compensation data...`,
-      complete: 'Almost ready...'
-    };
-
+  // Show loading screen for initial data load
+  if (isLoading) {
     return (
       <HistoryLoadingScreen
-        message={loadingMessages[globalLoadingState.stage]}
-        showProgress={true}
-        progress={globalLoadingState.progress}
-        stage={globalLoadingState.stage}
+        message="Loading your compensation summary..."
+        stage="decrypting"
       />
     );
   }
 
+  // Show error state if there's an error
+  if (error) {
+    return (
+      <div className="text-center py-8">
+        <div className="text-red-600 mb-4">Failed to load compensation data</div>
+        <div className="text-sm text-gray-500">{error}</div>
+      </div>
+    );
+  }
+
   // Show welcome screen for first-time users
-  if (globalLoadingState.isFirstVisit && !globalLoadingState.hasData) {
+  if (summaries.length === 0) {
     return (
       <div className="space-y-8">
         {/* Header */}

@@ -6,6 +6,7 @@ import { useSecurePassword } from '@/hooks/usePassword';
 import { LocalStorageService } from '@/services/localStorageService';
 import { EncryptionService } from '@/services/encryptionService';
 import { SyncService } from '@/services/syncService';
+import { sessionDataCache } from '@/services/sessionDataCache';
 import type { 
   CompensationRecord, 
   CompensationType, 
@@ -191,6 +192,9 @@ export function useCompensationData(
           setLoading(false);
           setIsStale(false);
           
+          // Invalidate session cache since data changed
+          sessionDataCache.invalidateUser(stableUserId);
+          
           console.log(`[useCompensationData] Initial sync completed: ${syncedData.length} records loaded`);
           
         } catch (syncError) {
@@ -210,7 +214,11 @@ export function useCompensationData(
         if (backgroundSync && navigator.onLine) {
           try {
             // Use bidirectional sync for background updates - this doesn't block UI
-            SyncService.triggerBidirectionalSync(stableUserId, password);
+            SyncService.triggerBidirectionalSync(stableUserId, password)
+              .then(() => {
+                // Invalidate session cache after background sync
+                sessionDataCache.invalidateUser(stableUserId);
+              });
             
             // Check if we need to reload after sync with proper cleanup
             setTimeout(async () => {

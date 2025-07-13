@@ -1,5 +1,5 @@
 import { CryptoUtils } from '@/lib/crypto/encryption';
-import { KeyDerivation } from '@/lib/crypto/keyDerivation';
+import { keyCache } from '@/lib/crypto/keyCache';
 import {
   EncryptedData,
   EncryptionOptions,
@@ -33,12 +33,12 @@ export class EncryptionService {
       // Generate salt for key derivation
       const salt = CryptoUtils.generateSalt(32);
 
-      // Derive encryption key from password
-      const key = await KeyDerivation.deriveKey({
+      // Derive encryption key from password using cache
+      const key = await keyCache.getOrDeriveKey(
         password,
         salt,
-        ...options?.keyDerivationParams,
-      });
+        options?.keyDerivationParams
+      );
 
       // Encrypt the data
       const { encryptedData, iv } = await CryptoUtils.encrypt(data, key);
@@ -120,12 +120,12 @@ export class EncryptionService {
         );
       }
 
-      // Derive decryption key from password
-      const key = await KeyDerivation.deriveKey({
+      // Derive decryption key from password using cache
+      const key = await keyCache.getOrDeriveKey(
         password,
         salt,
-        ...options?.keyDerivationParams,
-      });
+        options?.keyDerivationParams
+      );
 
       // Decrypt the data
       const decryptedData = await CryptoUtils.decrypt(dataBuffer, key, iv);
@@ -175,6 +175,10 @@ export class EncryptionService {
         options
       );
 
+      // Clear key cache since password changed
+      keyCache.invalidateAll();
+      console.log('[EncryptionService] Cleared key cache after password change');
+
       return {
         success: true,
         data: newEncryptedData,
@@ -185,6 +189,20 @@ export class EncryptionService {
         error: error instanceof Error ? error.message : 'Password change failed',
       };
     }
+  }
+
+  /**
+   * Clear the key derivation cache (useful for logout or security reset)
+   */
+  static clearKeyCache(): void {
+    keyCache.clearAll();
+  }
+
+  /**
+   * Get key cache statistics for performance monitoring
+   */
+  static getKeyCacheStats() {
+    return keyCache.getStats();
   }
 
   /**
@@ -357,16 +375,16 @@ export class EncryptionService {
 
       let sharedKey: CryptoKey | null = null;
       if (saltsMatch) {
-        // Derive key once for all records (traditional case)
+        // Derive key once for all records using cache (traditional case)
         console.time(keyDerivationTimer);
-        sharedKey = await KeyDerivation.deriveKey({
+        sharedKey = await keyCache.getOrDeriveKey(
           password,
-          salt: firstSalt,
-          ...options?.keyDerivationParams,
-        });
+          firstSalt,
+          options?.keyDerivationParams
+        );
         console.timeEnd(keyDerivationTimer);
       } else {
-        console.log(`[${timerPrefix}] Different salts detected, will derive keys individually`);
+        console.log(`[${timerPrefix}] Different salts detected, will derive keys individually using cache`);
       }
 
       // Decrypt all records in parallel using the same key
@@ -403,13 +421,13 @@ export class EncryptionService {
               // Use the shared key (all records have same salt)
               keyToUse = sharedKey;
             } else {
-              // Derive individual key for this record (different salts)
+              // Derive individual key for this record using cache (different salts)
               const recordSalt = CryptoUtils.base64ToUint8Array(encryptedData.salt);
-              keyToUse = await KeyDerivation.deriveKey({
+              keyToUse = await keyCache.getOrDeriveKey(
                 password,
-                salt: recordSalt,
-                ...options?.keyDerivationParams,
-              });
+                recordSalt,
+                options?.keyDerivationParams
+              );
             }
 
             // Decrypt using the appropriate key

@@ -433,6 +433,10 @@ export class PasswordService {
     this.sessionPassword = null;
     this.sessionExpiry = null;
     this.isAutoderived = false;
+    
+    // Clear key cache when session password is cleared
+    EncryptionService.clearKeyCache();
+    console.log('[PasswordService] Cleared session password and key cache');
   }
 
   /**
