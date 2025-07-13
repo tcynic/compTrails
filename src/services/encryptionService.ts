@@ -545,7 +545,8 @@ export class EncryptionService {
         
         for (const corrupted of corruptedRecords) {
           try {
-            await LocalStorageService.deleteCompensationRecord(corrupted.id);
+            // Skip sync for corrupted records since they likely don't have valid Convex IDs
+            await LocalStorageService.deleteCompensationRecord(corrupted.id, true);
             console.log(`[EncryptionService] Deleted corrupted record ID: ${corrupted.id}`);
           } catch (deleteError) {
             console.error(`[EncryptionService] Failed to delete corrupted record ID: ${corrupted.id}`, deleteError);

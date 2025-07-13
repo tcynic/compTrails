@@ -211,7 +211,7 @@ export class LocalStorageService {
   /**
    * Delete a compensation record
    */
-  static async deleteCompensationRecord(id: number): Promise<void> {
+  static async deleteCompensationRecord(id: number, skipSync: boolean = false): Promise<void> {
     try {
       // Get the record first to obtain userId
       const record = await db.compensationRecords.get(id);
@@ -222,7 +222,17 @@ export class LocalStorageService {
       await db.compensationRecords.delete(id);
       
       // Add to sync queue (no data needed for delete operation)
-      await this.addToSyncQueue('delete', 'compensationRecords', id, record.userId);
+      // Skip sync for corrupted records that may not have valid Convex IDs
+      if (!skipSync) {
+        // Check if record has a Convex ID before queuing delete operation
+        if (record.convexId) {
+          await this.addToSyncQueue('delete', 'compensationRecords', id, record.userId);
+        } else {
+          console.log(`[LocalStorageService] Skipping sync queue for delete of record ${id} - no Convex ID found (likely never synced)`);
+        }
+      } else {
+        console.log(`[LocalStorageService] Skipping sync queue for delete of record ${id} - skipSync=true`);
+      }
     } catch (error) {
       throw new LocalStorageError(
         `Failed to delete compensation record: ${error instanceof Error ? error.message : 'Unknown error'}`,

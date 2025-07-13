@@ -391,7 +391,8 @@ export class DataIntegrityService {
       // Fix corrupted records by removing them (they're unrecoverable)
       for (const corrupted of integrityCheck.details.corruptedRecords) {
         if (!dryRun) {
-          await LocalStorageService.deleteCompensationRecord(corrupted.id);
+          // Skip sync for corrupted records since they likely don't have valid Convex IDs
+          await LocalStorageService.deleteCompensationRecord(corrupted.id, true);
         }
         result.fixesApplied++;
         result.issues.push(`${dryRun ? 'Would remove' : 'Removed'} corrupted record ${corrupted.id}: ${corrupted.error}`);

@@ -225,7 +225,9 @@ export class SyncService {
           // For delete operations, we need the actual Convex ID from the local record
           const localRecordToDelete = await db.compensationRecords.get(parseInt(recordId as string));
           if (!localRecordToDelete?.convexId) {
-            throw new Error(`Cannot delete record ${recordId}: no Convex ID found`);
+            console.warn(`[SyncService] Cannot delete record ${recordId}: no Convex ID found (likely never synced or corrupted record)`);
+            // Don't throw error - just log warning and continue
+            break;
           }
           
           await this.convexClient.mutation(api.compensationRecords.deleteCompensationRecord, {
@@ -450,7 +452,9 @@ export class SyncService {
           // For delete operations, we need the actual Convex ID from the local record
           const localRecordToDelete = await db.compensationRecords.get(item.recordId);
           if (!localRecordToDelete?.convexId) {
-            throw new Error(`Cannot delete record ${item.recordId}: no Convex ID found`);
+            console.warn(`[SyncService] Cannot delete record ${item.recordId}: no Convex ID found (likely never synced or corrupted record)`);
+            // Don't throw error - just log warning and continue
+            break;
           }
           
           console.log(`[SyncService] Deleting Convex record ${localRecordToDelete.convexId} for local record ${item.recordId}`);
