@@ -172,11 +172,12 @@ export function AddSalaryForm({
 
       if (isEditMode && editRecord) {
         // Update existing record
+        // FIXED: Remove explicit version increment to prevent version conflicts
         await LocalStorageService.updateCompensationRecord(editRecord.id!, {
           encryptedData,
           currency: data.currency,
           updatedAt: Date.now(),
-          version: editRecord.version + 1,
+          // Remove version increment - let database hook manage versions properly
         });
       } else {
         // Create new record - Store locally first (local-first architecture)

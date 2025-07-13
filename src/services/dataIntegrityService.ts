@@ -433,10 +433,11 @@ export class DataIntegrityService {
             const updatedData = { ...recordToFix, isCurrentPosition: false };
             const encryptedData = await EncryptionService.encryptData(JSON.stringify(updatedData), password);
             
+            // FIXED: Remove explicit version increment in data integrity fixes
             await LocalStorageService.updateCompensationRecord(recordToFix.id!, {
               encryptedData,
               updatedAt: Date.now(),
-              version: (recordToFix.version || 1) + 1,
+              // Remove version increment - let database hook manage versions
             });
           }
           

@@ -180,11 +180,13 @@ export class LocalStorageService {
     updates: Partial<CompensationRecord>
   ): Promise<void> {
     try {
+      // FIXED: Don't force version increment - let database hook handle it properly
+      // This prevents version inflation that was causing major sync conflicts
       await db.compensationRecords.update(id, {
         ...updates,
         updatedAt: Date.now(),
-        version: (updates.version || 1) + 1,
         syncStatus: 'pending',
+        // Remove forced version increment - database hook will handle it appropriately
       });
       
       // Get the updated record to include in sync data
@@ -284,13 +286,14 @@ export class LocalStorageService {
         password
       );
 
-      // Update the record in the database
+      // FIXED: Update the record without forced version increment
+      // Let the database hook handle version management properly
       const updatedRecord = {
         ...record,
         encryptedData,
         updatedAt: Date.now(),
-        version: (record.version || 1) + 1,
         syncStatus: 'pending' as const,
+        // Remove forced version increment - database hook will handle it
       };
 
       await db.compensationRecords.put(updatedRecord);
