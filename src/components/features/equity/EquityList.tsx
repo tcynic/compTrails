@@ -7,7 +7,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Plus, Search, Filter, Calendar, TrendingUp } from 'lucide-react';
-import { useEquityData } from '@/hooks/useCompensationData';
+import { usePageLoadingState } from '@/hooks/useGlobalLoadingState';
+import { HistoryLoadingScreen } from '@/components/ui/HistoryLoadingScreen';
 import { AddEquityForm } from './AddEquityForm';
 import type { DecryptedEquityData } from '@/lib/db/types';
 import { equityTypeOptions } from '@/lib/validations/equity';
@@ -18,13 +19,13 @@ export function EquityList() {
   const [filterType, setFilterType] = useState<string>('all');
   const [showAddForm, setShowAddForm] = useState(false);
   
-  // LOCAL-FIRST: Use the new equity data hook
-  // This loads from IndexedDB immediately, provides instant UI updates,
-  // and handles background sync automatically
-  const { data: equityGrants, loading: isLoading, refetch } = useEquityData({
-    autoRefresh: true,
-    backgroundSync: true,
-  });
+  // Use page loading state that respects global loading
+  const {
+    data: equityGrants,
+    showGlobalLoading,
+    showIndividualLoading,
+    refetch
+  } = usePageLoadingState('equity');
 
 
   const filteredEquityGrants = useMemo(() => {
@@ -149,7 +150,18 @@ export function EquityList() {
     }, { totalShares: 0, vestedShares: 0, unvestedShares: 0 });
   }, [filteredEquityGrants]);
 
-  if (isLoading) {
+  // Show global loading screen for initial load
+  if (showGlobalLoading) {
+    return (
+      <HistoryLoadingScreen
+        message="Loading your equity grants..."
+        stage="decrypting"
+      />
+    );
+  }
+
+  // Show individual loading for refreshes
+  if (showIndividualLoading) {
     return (
       <div className="space-y-4">
         <div className="flex justify-between items-center">

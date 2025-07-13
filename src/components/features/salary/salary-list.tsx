@@ -11,13 +11,14 @@ import {
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Edit, Trash2, MapPin, Calendar, DollarSign } from "lucide-react";
-import { useSalaryData } from "@/hooks/useCompensationData";
+import { usePageLoadingState } from "@/hooks/useGlobalLoadingState";
+import { HistoryLoadingScreen } from "@/components/ui/HistoryLoadingScreen";
 import { format } from "date-fns";
 import { currencyOptions } from "@/lib/validations/salary";
 import type { DecryptedSalaryData } from "@/lib/db/types";
 
 // Use the type from the hook which already includes decryptedData
-type SalaryRecord = ReturnType<typeof useSalaryData>['data'][0];
+type SalaryRecord = ReturnType<typeof usePageLoadingState>['data'][0];
 
 interface SalaryListProps {
   onEdit?: (record: SalaryRecord) => void;
@@ -30,13 +31,13 @@ export function SalaryList({
   onDelete,
   refreshTrigger,
 }: SalaryListProps) {
-  // LOCAL-FIRST: Use the new salary data hook
-  // This loads from IndexedDB immediately, provides instant UI updates,
-  // and handles background sync automatically
-  const { data: salaries, loading, refetch } = useSalaryData({
-    autoRefresh: true,
-    backgroundSync: true,
-  });
+  // Use page loading state that respects global loading
+  const {
+    data: salaries,
+    showGlobalLoading,
+    showIndividualLoading,
+    refetch
+  } = usePageLoadingState('salary');
 
   // Handle external refresh trigger
   useEffect(() => {
@@ -55,7 +56,18 @@ export function SalaryList({
     return format(new Date(dateString), "MMM yyyy");
   };
 
-  if (loading) {
+  // Show global loading screen for initial load
+  if (showGlobalLoading) {
+    return (
+      <HistoryLoadingScreen
+        message="Loading your salary history..."
+        stage="decrypting"
+      />
+    );
+  }
+
+  // Show individual loading for refreshes
+  if (showIndividualLoading) {
     return (
       <div className="space-y-4">
         {[...Array(3)].map((_, i) => (

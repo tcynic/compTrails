@@ -7,7 +7,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Plus, Search, Filter } from 'lucide-react';
-import { useBonusData } from '@/hooks/useCompensationData';
+import { usePageLoadingState } from '@/hooks/useGlobalLoadingState';
+import { HistoryLoadingScreen } from '@/components/ui/HistoryLoadingScreen';
 import { AddBonusForm } from './AddBonusForm';
 import { bonusTypeOptions } from '@/lib/validations/bonus';
 import { format } from 'date-fns';
@@ -18,13 +19,13 @@ export function BonusList() {
   const [filterType, setFilterType] = useState<string>('all');
   const [showAddForm, setShowAddForm] = useState(false);
   
-  // LOCAL-FIRST: Use the new bonus data hook
-  // This loads from IndexedDB immediately, provides instant UI updates,
-  // and handles background sync automatically
-  const { data: bonuses, loading: isLoading, refetch } = useBonusData({
-    autoRefresh: true,
-    backgroundSync: true,
-  });
+  // Use page loading state that respects global loading
+  const {
+    data: bonuses,
+    showGlobalLoading,
+    showIndividualLoading,
+    refetch
+  } = usePageLoadingState('bonus');
 
 
   const filteredBonuses = useMemo(() => {
@@ -103,7 +104,18 @@ export function BonusList() {
     }).format(amount);
   };
 
-  if (isLoading) {
+  // Show global loading screen for initial load
+  if (showGlobalLoading) {
+    return (
+      <HistoryLoadingScreen
+        message="Loading your bonus history..."
+        stage="decrypting"
+      />
+    );
+  }
+
+  // Show individual loading for refreshes
+  if (showIndividualLoading) {
     return (
       <div className="space-y-4">
         <div className="flex justify-between items-center">

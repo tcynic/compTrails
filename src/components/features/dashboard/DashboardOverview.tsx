@@ -17,7 +17,9 @@ import {
   Download
 } from 'lucide-react';
 import { useCompensationData } from '@/hooks/useCompensationData';
+import { useGlobalLoadingState } from '@/hooks/useGlobalLoadingState';
 import { useAnalytics } from '@/hooks/useAnalytics';
+import { HistoryLoadingScreen } from '@/components/ui/HistoryLoadingScreen';
 import { useState } from 'react';
 
 // Lazy load the export dialog since it's not used immediately
@@ -35,6 +37,9 @@ export function DashboardOverview() {
   const [showExportDialog, setShowExportDialog] = useState(false);
   const { trackPageView } = useAnalytics();
   const router = useRouter();
+
+  // GLOBAL LOADING STATE: Check if we should show the history loading screen
+  const globalLoadingState = useGlobalLoadingState();
 
   // LOCAL-FIRST: Use the new compensation data hook
   // This loads from IndexedDB immediately, provides instant UI updates,
@@ -180,6 +185,46 @@ export function DashboardOverview() {
         };
     }
   };
+
+  // Show global loading screen for initial data load
+  if (globalLoadingState.isInitialLoading) {
+    const loadingMessages = {
+      querying: `Loading your compensation history...`,
+      decrypting: `Decrypting ${globalLoadingState.recordCounts.total} records...`,
+      processing: `Processing your compensation data...`,
+      complete: 'Almost ready...'
+    };
+
+    return (
+      <HistoryLoadingScreen
+        message={loadingMessages[globalLoadingState.stage]}
+        showProgress={true}
+        progress={globalLoadingState.progress}
+        stage={globalLoadingState.stage}
+      />
+    );
+  }
+
+  // Show welcome screen for first-time users
+  if (globalLoadingState.isFirstVisit && !globalLoadingState.hasData) {
+    return (
+      <div className="space-y-8">
+        {/* Header */}
+        <div className="text-center py-12">
+          <h1 className="text-4xl font-bold text-gray-900 mb-4">Welcome to Total Compensation Tracker</h1>
+          <p className="text-xl text-gray-600 mb-8">
+            Start building your complete compensation history
+          </p>
+          <div className="flex justify-center gap-4">
+            <Button size="lg" onClick={() => router.push('/dashboard/salary')}>
+              <Plus className="h-5 w-5 mr-2" />
+              Add Your First Salary
+            </Button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-8">
