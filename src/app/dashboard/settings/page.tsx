@@ -27,6 +27,7 @@ import { useAnalytics } from '@/hooks/useAnalytics';
 import { SyncService } from '@/services/syncService';
 import { getSyncConfig, updateSyncConfig } from '@/lib/config/syncConfig';
 import { DuplicateCleanupPanel } from '@/components/admin/DuplicateCleanupPanel';
+import { DataIntegrityPanel } from '@/components/admin/DataIntegrityPanel';
 
 export default function SettingsPage() {
   const { user } = useAuth();
@@ -111,8 +112,10 @@ export default function SettingsPage() {
           </div>
         </div>
 
-        {/* Duplicate Cleanup Panel - Temporary for cleanup process */}
+        {/* Admin Tools - Temporary for data management */}
         <DuplicateCleanupPanel />
+        
+        <DataIntegrityPanel />
 
         {/* Settings Grid */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
