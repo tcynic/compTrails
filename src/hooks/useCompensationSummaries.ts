@@ -141,11 +141,36 @@ function extractSummaryFromDecryptedData(
 export function useCompensationSummaries(): SummariesState {
   const { user } = useAuth();
   const password = useSecurePassword();
-  const [state, setState] = useState<SummariesState>({
-    summaries: [],
-    loading: true,
-    error: null,
-    lastLoadTime: 0,
+  
+  // Initialize state with synchronous cache check to avoid loading state when data is cached
+  const [state, setState] = useState<SummariesState>(() => {
+    if (!user?.id) {
+      return {
+        summaries: [],
+        loading: true,
+        error: null,
+        lastLoadTime: 0,
+      };
+    }
+    
+    // Check session cache synchronously during initialization
+    const cachedSummaries = sessionDataCache.getSummaries(user.id);
+    if (cachedSummaries) {
+      console.log(`[useCompensationSummaries] INSTANT LOAD: ${cachedSummaries.length} summaries from session cache`);
+      return {
+        summaries: cachedSummaries,
+        loading: false,
+        error: null,
+        lastLoadTime: Date.now(),
+      };
+    }
+    
+    return {
+      summaries: [],
+      loading: true,
+      error: null,
+      lastLoadTime: 0,
+    };
   });
   
   // Ref to prevent concurrent loads
@@ -179,6 +204,7 @@ export function useCompensationSummaries(): SummariesState {
       return;
     }
 
+    // Only show loading state if cache miss (genuine loading needed)
     setState(prev => ({ ...prev, loading: true, error: null }));
 
     try {

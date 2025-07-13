@@ -30,7 +30,8 @@ const SalaryList = dynamic(() => import('@/components/features/salary/salary-lis
 
 // Import required types
 import type { DecryptedSalaryData, CompensationRecord } from '@/lib/db/types';
-import { usePageLoadingState } from '@/hooks/useGlobalLoadingState';
+import { useCompensationDetails } from '@/hooks/useCompensationDetails';
+import type { SalarySummary } from '@/hooks/useCompensationSummaries';
 
 // Create a properly typed salary record interface that matches AddSalaryForm expectations
 interface DecryptedSalaryRecord extends CompensationRecord {
@@ -38,7 +39,7 @@ interface DecryptedSalaryRecord extends CompensationRecord {
 }
 
 // Type alias for hook return type  
-type HookSalaryRecord = ReturnType<typeof usePageLoadingState>['data'][0];
+type HookSalaryRecord = SalarySummary;
 
 export default function SalaryPage() {
   const [showAddForm, setShowAddForm] = useState(false);
@@ -48,6 +49,12 @@ export default function SalaryPage() {
   const [isDeleting, setIsDeleting] = useState(false);
   const { user, loading } = useAuth();
   const router = useRouter();
+  
+  // Use optimized summary data for display (SalaryList handles its own state)
+  // const summaryState = useOptimizedPageState('salary'); // Not needed since SalaryList uses its own hook
+  
+  // Use details hook for loading full records when editing
+  const { loadRecordDetails } = useCompensationDetails();
 
   useEffect(() => {
     if (!loading && !user) {
@@ -76,9 +83,16 @@ export default function SalaryPage() {
     setRefreshTrigger(prev => prev + 1);
   };
 
-  const handleEdit = (record: HookSalaryRecord) => {
-    // Convert hook record to form-compatible record
-    setEditRecord(record as DecryptedSalaryRecord);
+  const handleEdit = async (record: HookSalaryRecord) => {
+    try {
+      // Load full record details for editing
+      const fullRecord = await loadRecordDetails(record.id);
+      if (fullRecord) {
+        setEditRecord(fullRecord as DecryptedSalaryRecord);
+      }
+    } catch (error) {
+      console.error('Failed to load record details for editing:', error);
+    }
   };
 
   const handleDeleteSalary = async () => {
@@ -136,8 +150,16 @@ export default function SalaryPage() {
         <SalaryList
           refreshTrigger={refreshTrigger}
           onEdit={handleEdit}
-          onDelete={(record) => {
-            setDeleteRecord(record as DecryptedSalaryRecord);
+          onDelete={async (record) => {
+            try {
+              // Load full record details for deletion
+              const fullRecord = await loadRecordDetails(record.id);
+              if (fullRecord) {
+                setDeleteRecord(fullRecord as DecryptedSalaryRecord);
+              }
+            } catch (error) {
+              console.error('Failed to load record details for deletion:', error);
+            }
           }}
         />
 

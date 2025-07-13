@@ -7,36 +7,35 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Plus, Search, Filter } from 'lucide-react';
-import { usePageLoadingState } from '@/hooks/useGlobalLoadingState';
+import { useOptimizedPageState } from '@/hooks/useOptimizedPageState';
 import { HistoryLoadingScreen } from '@/components/ui/HistoryLoadingScreen';
 import { AddBonusForm } from './AddBonusForm';
 import { bonusTypeOptions } from '@/lib/validations/bonus';
 import { format } from 'date-fns';
-import type { DecryptedBonusData } from '@/lib/db/types';
+import type { BonusSummary } from '@/hooks/useCompensationSummaries';
 
 export function BonusList() {
   const [searchTerm, setSearchTerm] = useState('');
   const [filterType, setFilterType] = useState<string>('all');
   const [showAddForm, setShowAddForm] = useState(false);
   
-  // Use page loading state that respects global loading
+  // Use optimized page state with smart loading
   const {
     data: bonuses,
-    showGlobalLoading,
-    showIndividualLoading,
+    showLoadingScreen,
+    showSkeleton,
     refetch
-  } = usePageLoadingState('bonus');
+  } = useOptimizedPageState('bonus');
 
 
   const filteredBonuses = useMemo(() => {
     return bonuses.filter(bonus => {
-      // Type assertion since we know these are bonus records from useBonusData
-      const bonusData = bonus.decryptedData as DecryptedBonusData;
+      // Work with summary data (bonuses are BonusSummary type)
+      const bonusData = bonus as BonusSummary;
       const matchesSearch = searchTerm === '' || 
-        bonusData.company.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        bonusData.description.toLowerCase().includes(searchTerm.toLowerCase());
+        bonusData.company.toLowerCase().includes(searchTerm.toLowerCase());
       
-      const matchesType = filterType === 'all' || bonusData.type === filterType;
+      const matchesType = filterType === 'all' || bonusData.bonusType === filterType;
       
       return matchesSearch && matchesType;
     });
@@ -44,7 +43,8 @@ export function BonusList() {
 
   const bonusesByYear = useMemo(() => {
     const grouped = filteredBonuses.reduce((acc, bonus) => {
-      const bonusData = bonus.decryptedData as DecryptedBonusData;
+      // Work with summary data
+      const bonusData = bonus as BonusSummary;
       const year = new Date(bonusData.date).getFullYear();
       if (!acc[year]) acc[year] = [];
       acc[year].push(bonus);
@@ -54,8 +54,8 @@ export function BonusList() {
     // Sort each year's bonuses by date (newest first)
     Object.keys(grouped).forEach(year => {
       grouped[Number(year)].sort((a, b) => {
-        const aData = a.decryptedData as DecryptedBonusData;
-        const bData = b.decryptedData as DecryptedBonusData;
+        const aData = a as BonusSummary;
+        const bData = b as BonusSummary;
         return new Date(bData.date).getTime() - new Date(aData.date).getTime();
       });
     });
@@ -70,7 +70,7 @@ export function BonusList() {
       totals[Number(year)] = {};
       
       yearBonuses.forEach(bonus => {
-        const bonusData = bonus.decryptedData as DecryptedBonusData;
+        const bonusData = bonus as BonusSummary;
         const currency = bonusData.currency;
         if (!totals[Number(year)][currency]) {
           totals[Number(year)][currency] = 0;
@@ -104,8 +104,8 @@ export function BonusList() {
     }).format(amount);
   };
 
-  // Show global loading screen for initial load
-  if (showGlobalLoading) {
+  // Show loading screen only for slow operations
+  if (showLoadingScreen) {
     return (
       <HistoryLoadingScreen
         message="Loading your bonus history..."
@@ -113,36 +113,24 @@ export function BonusList() {
       />
     );
   }
-
-  // Show individual loading for refreshes
-  if (showIndividualLoading) {
+  
+  // Show skeleton for fast operations
+  if (showSkeleton) {
     return (
-      <div className="space-y-4">
-        <div className="flex justify-between items-center">
-          <h2 className="text-2xl font-bold">Bonuses</h2>
-          <Button disabled>
-            <Plus className="h-4 w-4 mr-2" />
-            Add Bonus
-          </Button>
-        </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {[...Array(3)].map((_, i) => (
-            <Card key={i} className="animate-pulse">
-              <CardHeader className="pb-2">
-                <div className="h-4 bg-gray-200 rounded w-3/4"></div>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-2">
-                  <div className="h-3 bg-gray-200 rounded w-full"></div>
-                  <div className="h-3 bg-gray-200 rounded w-1/2"></div>
-                </div>
-              </CardContent>
-            </Card>
+      <div className="space-y-4 animate-pulse">
+        <div className="h-8 bg-gray-200 rounded w-48"></div>
+        <div className="grid gap-4">
+          {Array.from({ length: 3 }).map((_, i) => (
+            <div key={i} className="border rounded-lg p-4">
+              <div className="h-6 bg-gray-200 rounded w-32 mb-2"></div>
+              <div className="h-4 bg-gray-200 rounded w-24"></div>
+            </div>
           ))}
         </div>
       </div>
     );
   }
+
 
   return (
     <div className="space-y-6">
@@ -227,7 +215,7 @@ export function BonusList() {
                 
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                   {yearBonuses.map((bonus) => {
-                    const bonusData = bonus.decryptedData as DecryptedBonusData;
+                    const bonusData = bonus as BonusSummary;
                     return (
                       <Card key={bonus.id} className="hover:shadow-md transition-shadow">
                         <CardHeader className="pb-3">
@@ -238,8 +226,8 @@ export function BonusList() {
                                 {format(new Date(bonusData.date), 'MMM dd, yyyy')}
                               </p>
                             </div>
-                            <Badge className={getBonusTypeBadgeColor(bonusData.type)}>
-                              {bonusTypeOptions.find(opt => opt.value === bonusData.type)?.label}
+                            <Badge className={getBonusTypeBadgeColor(bonusData.bonusType)}>
+                              {bonusTypeOptions.find(opt => opt.value === bonusData.bonusType)?.label}
                             </Badge>
                           </div>
                         </CardHeader>
@@ -248,15 +236,7 @@ export function BonusList() {
                             <div className="text-2xl font-bold text-green-600">
                               {formatCurrency(bonusData.amount, bonusData.currency)}
                             </div>
-                            <p className="text-sm text-gray-600">{bonusData.description}</p>
-                            {bonusData.payrollDate && (
-                              <p className="text-xs text-gray-500">
-                                Payroll: {format(new Date(bonusData.payrollDate), 'MMM dd, yyyy')}
-                              </p>
-                            )}
-                            {bonusData.notes && (
-                              <p className="text-xs text-gray-500">{bonusData.notes}</p>
-                            )}
+                            {/* Description, payroll date, and notes not available in summary data */}
                           </div>
                         </CardContent>
                       </Card>

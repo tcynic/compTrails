@@ -5,7 +5,6 @@ import { PostHogProvider } from "./providers";
 import { ConvexClientProvider } from "@/providers/ConvexClientProvider";
 import { AuthProvider } from "@/contexts/AuthContext";
 import { PasswordAuthBridge } from "@/components/providers/PasswordAuthBridge";
-import { GlobalLoadingProvider } from "@/contexts/GlobalLoadingContext";
 import { OfflineProvider } from "@/components/providers/OfflineProvider";
 import { PWARegistration } from "@/components/providers/PWARegistration";
 
@@ -38,11 +37,9 @@ export default function RootLayout({
           <ConvexClientProvider>
             <AuthProvider>
               <PasswordAuthBridge>
-                <GlobalLoadingProvider>
-                  <OfflineProvider>
-                    {children}
-                  </OfflineProvider>
-                </GlobalLoadingProvider>
+                <OfflineProvider>
+                  {children}
+                </OfflineProvider>
               </PasswordAuthBridge>
             </AuthProvider>
           </ConvexClientProvider>

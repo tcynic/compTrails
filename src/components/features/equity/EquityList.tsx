@@ -1,16 +1,16 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useCallback } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Plus, Search, Filter, Calendar, TrendingUp } from 'lucide-react';
-import { usePageLoadingState } from '@/hooks/useGlobalLoadingState';
+import { useOptimizedPageState } from '@/hooks/useOptimizedPageState';
+import type { EquitySummary } from '@/hooks/useCompensationSummaries';
 import { HistoryLoadingScreen } from '@/components/ui/HistoryLoadingScreen';
 import { AddEquityForm } from './AddEquityForm';
-import type { DecryptedEquityData } from '@/lib/db/types';
 import { equityTypeOptions } from '@/lib/validations/equity';
 import { format, differenceInMonths, addMonths } from 'date-fns';
 
@@ -19,23 +19,25 @@ export function EquityList() {
   const [filterType, setFilterType] = useState<string>('all');
   const [showAddForm, setShowAddForm] = useState(false);
   
-  // Use page loading state that respects global loading
+  // Use optimized page state with smart loading
   const {
-    data: equityGrants,
-    showGlobalLoading,
-    showIndividualLoading,
+    data: equityGrantsData,
+    showLoadingScreen,
+    showSkeleton,
     refetch
-  } = usePageLoadingState('equity');
+  } = useOptimizedPageState('equity');
+  
+  // Cast to specific equity type since we know this hook filters for equity records
+  const equityGrants = equityGrantsData as EquitySummary[];
 
 
   const filteredEquityGrants = useMemo(() => {
     return equityGrants.filter(grant => {
-      // Type assertion since we know these are equity records from useEquityData
-      const equityData = grant.decryptedData as DecryptedEquityData;
+      // Work directly with summary data
       const matchesSearch = searchTerm === '' || 
-        equityData.company.toLowerCase().includes(searchTerm.toLowerCase());
+        grant.company.toLowerCase().includes(searchTerm.toLowerCase());
       
-      const matchesType = filterType === 'all' || equityData.type === filterType;
+      const matchesType = filterType === 'all' || grant.equityType === filterType;
       
       return matchesSearch && matchesType;
     });
@@ -43,8 +45,7 @@ export function EquityList() {
 
   const equityGrantsByCompany = useMemo(() => {
     const grouped = filteredEquityGrants.reduce((acc, grant) => {
-      const equityData = grant.decryptedData as DecryptedEquityData;
-      const company = equityData.company;
+      const company = grant.company;
       if (!acc[company]) acc[company] = [];
       acc[company].push(grant);
       return acc;
@@ -53,16 +54,14 @@ export function EquityList() {
     // Sort each company's grants by grant date (newest first)
     Object.keys(grouped).forEach(company => {
       grouped[company].sort((a, b) => {
-        const aData = a.decryptedData as DecryptedEquityData;
-        const bData = b.decryptedData as DecryptedEquityData;
-        return new Date(bData.grantDate).getTime() - new Date(aData.grantDate).getTime();
+        return new Date(b.grantDate).getTime() - new Date(a.grantDate).getTime();
       });
     });
 
     return grouped;
   }, [filteredEquityGrants]);
 
-  const calculateVestingProgress = (grant: DecryptedEquityData) => {
+  const calculateVestingProgress = useCallback((grant: EquitySummary) => {
     const now = new Date();
     const vestingStart = new Date(grant.vestingStart);
     
@@ -77,21 +76,7 @@ export function EquityList() {
       };
     }
 
-    // Handle cliff
-    const cliffMonths = grant.vestingCliff || 0;
-    const cliffDate = addMonths(vestingStart, cliffMonths);
-    
-    if (now < cliffDate) {
-      return {
-        vestedShares: 0,
-        unvestedShares: grant.shares,
-        progressPercentage: 0,
-        nextVestingDate: cliffDate,
-        isFullyVested: false,
-      };
-    }
-
-    // Calculate total vested shares
+    // Calculate total vested shares using simplified linear vesting
     const monthsVested = differenceInMonths(now, vestingStart);
     const totalVestingPeriod = grant.vestingPeriod;
     
@@ -105,28 +90,21 @@ export function EquityList() {
       };
     }
 
-    // Calculate based on frequency
-    let vestedShares = 0;
-    const frequencyMonths = grant.vestingFrequency === 'monthly' ? 1 : 
-                           grant.vestingFrequency === 'quarterly' ? 3 : 12;
+    // Simple linear vesting calculation (monthly basis)
+    const progressRatio = monthsVested / totalVestingPeriod;
+    const vestedShares = Math.floor(grant.shares * progressRatio);
     
-    const vestingPeriods = Math.floor(monthsVested / frequencyMonths);
-    const sharesPerPeriod = grant.shares / (totalVestingPeriod / frequencyMonths);
-    
-    vestedShares = Math.min(vestingPeriods * sharesPerPeriod, grant.shares);
-    
-    // Calculate next vesting date
-    const nextVestingPeriod = vestingPeriods + 1;
-    const nextVestingDate = addMonths(vestingStart, nextVestingPeriod * frequencyMonths);
+    // Calculate next vesting date (assume monthly for summary view)
+    const nextVestingDate = addMonths(vestingStart, monthsVested + 1);
     
     return {
-      vestedShares: Math.floor(vestedShares),
-      unvestedShares: grant.shares - Math.floor(vestedShares),
-      progressPercentage: Math.floor((vestedShares / grant.shares) * 100),
-      nextVestingDate: nextVestingDate > addMonths(vestingStart, totalVestingPeriod) ? null : nextVestingDate,
+      vestedShares,
+      unvestedShares: grant.shares - vestedShares,
+      progressPercentage: Math.floor(progressRatio * 100),
+      nextVestingDate: monthsVested + 1 < totalVestingPeriod ? nextVestingDate : null,
       isFullyVested: false,
     };
-  };
+  }, []);
 
   const getEquityTypeBadgeColor = (type: string) => {
     const colors = {
@@ -141,17 +119,16 @@ export function EquityList() {
 
   const totalSummary = useMemo(() => {
     return filteredEquityGrants.reduce((acc, grant) => {
-      const equityData = grant.decryptedData as DecryptedEquityData;
-      const vesting = calculateVestingProgress(equityData);
-      acc.totalShares += equityData.shares;
+      const vesting = calculateVestingProgress(grant);
+      acc.totalShares += grant.shares;
       acc.vestedShares += vesting.vestedShares;
       acc.unvestedShares += vesting.unvestedShares;
       return acc;
     }, { totalShares: 0, vestedShares: 0, unvestedShares: 0 });
-  }, [filteredEquityGrants]);
+  }, [filteredEquityGrants, calculateVestingProgress]);
 
   // Show global loading screen for initial load
-  if (showGlobalLoading) {
+  if (showLoadingScreen) {
     return (
       <HistoryLoadingScreen
         message="Loading your equity grants..."
@@ -161,7 +138,7 @@ export function EquityList() {
   }
 
   // Show individual loading for refreshes
-  if (showIndividualLoading) {
+  if (showSkeleton) {
     return (
       <div className="space-y-4">
         <div className="flex justify-between items-center">
@@ -274,8 +251,7 @@ export function EquityList() {
               
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {companyGrants.map((grant) => {
-                  const equityData = grant.decryptedData as DecryptedEquityData;
-                  const vesting = calculateVestingProgress(equityData);
+                  const vesting = calculateVestingProgress(grant);
                   return (
                     <Card key={grant.id} className="hover:shadow-md transition-shadow">
                       <CardHeader className="pb-3">
@@ -283,14 +259,14 @@ export function EquityList() {
                           <div>
                             <CardTitle className="text-lg flex items-center gap-2">
                               <TrendingUp className="h-5 w-5" />
-                              {equityData.shares.toLocaleString()} shares
+                              {grant.shares.toLocaleString()} shares
                             </CardTitle>
                             <p className="text-sm text-gray-500">
-                              Granted {format(new Date(equityData.grantDate), 'MMM dd, yyyy')}
+                              Granted {format(new Date(grant.grantDate), 'MMM dd, yyyy')}
                             </p>
                           </div>
-                          <Badge className={getEquityTypeBadgeColor(equityData.type)}>
-                            {equityData.type}
+                          <Badge className={getEquityTypeBadgeColor(grant.equityType)}>
+                            {grant.equityType}
                           </Badge>
                         </div>
                       </CardHeader>
@@ -318,29 +294,19 @@ export function EquityList() {
                           <div className="text-sm space-y-1">
                             <div className="flex justify-between">
                               <span className="text-gray-600">Vesting Start:</span>
-                              <span>{format(new Date(equityData.vestingStart), 'MMM dd, yyyy')}</span>
+                              <span>{format(new Date(grant.vestingStart), 'MMM dd, yyyy')}</span>
                             </div>
                             <div className="flex justify-between">
                               <span className="text-gray-600">Vesting Period:</span>
-                              <span>{equityData.vestingPeriod} months</span>
+                              <span>{grant.vestingPeriod} months</span>
                             </div>
-                            <div className="flex justify-between">
-                              <span className="text-gray-600">Frequency:</span>
-                              <span className="capitalize">{equityData.vestingFrequency}</span>
-                            </div>
-                            {equityData.vestingCliff && (
-                              <div className="flex justify-between">
-                                <span className="text-gray-600">Cliff:</span>
-                                <span>{equityData.vestingCliff} months</span>
-                              </div>
-                            )}
                           </div>
 
                           {/* Strike Price */}
-                          {equityData.strikePrice && (
+                          {grant.strikePrice && (
                             <div className="text-sm">
                               <span className="text-gray-600">Strike Price: </span>
-                              <span className="font-medium">${equityData.strikePrice}</span>
+                              <span className="font-medium">${grant.strikePrice}</span>
                             </div>
                           )}
 
@@ -359,10 +325,7 @@ export function EquityList() {
                             </Badge>
                           )}
 
-                          {/* Notes */}
-                          {equityData.notes && (
-                            <p className="text-xs text-gray-500 mt-2">{equityData.notes}</p>
-                          )}
+                          {/* Notes not available in summary data - would need full record */}
                         </div>
                       </CardContent>
                     </Card>

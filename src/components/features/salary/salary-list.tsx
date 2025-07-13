@@ -11,14 +11,14 @@ import {
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Edit, Trash2, MapPin, Calendar, DollarSign } from "lucide-react";
-import { usePageLoadingState } from "@/hooks/useGlobalLoadingState";
+import { useOptimizedPageState } from "@/hooks/useOptimizedPageState";
 import { HistoryLoadingScreen } from "@/components/ui/HistoryLoadingScreen";
 import { format } from "date-fns";
 import { currencyOptions } from "@/lib/validations/salary";
-import type { DecryptedSalaryData } from "@/lib/db/types";
+import type { SalarySummary } from "@/hooks/useCompensationSummaries";
 
-// Use the type from the hook which already includes decryptedData
-type SalaryRecord = ReturnType<typeof usePageLoadingState>['data'][0];
+// Use the specific salary summary type
+type SalaryRecord = SalarySummary;
 
 interface SalaryListProps {
   onEdit?: (record: SalaryRecord) => void;
@@ -33,11 +33,14 @@ export function SalaryList({
 }: SalaryListProps) {
   // Use page loading state that respects global loading
   const {
-    data: salaries,
-    showGlobalLoading,
-    showIndividualLoading,
+    data: salariesData,
+    showLoadingScreen,
+    showSkeleton,
     refetch
-  } = usePageLoadingState('salary');
+  } = useOptimizedPageState('salary');
+  
+  // Cast to specific salary type since we know this hook filters for salary records
+  const salaries = salariesData as SalarySummary[];
 
   // Handle external refresh trigger
   useEffect(() => {
@@ -57,7 +60,7 @@ export function SalaryList({
   };
 
   // Show global loading screen for initial load
-  if (showGlobalLoading) {
+  if (showLoadingScreen) {
     return (
       <HistoryLoadingScreen
         message="Loading your salary history..."
@@ -67,7 +70,7 @@ export function SalaryList({
   }
 
   // Show individual loading for refreshes
-  if (showIndividualLoading) {
+  if (showSkeleton) {
     return (
       <div className="space-y-4">
         {[...Array(3)].map((_, i) => (
@@ -104,22 +107,21 @@ export function SalaryList({
   return (
     <div className="space-y-4">
       {salaries.map((salary) => {
-        // Type assertion since we know these are salary records from useSalaryData
-        const salaryData = salary.decryptedData as DecryptedSalaryData;
+        // Work directly with summary data - no need for decryptedData
         return (
           <Card key={salary.id} className="hover:shadow-md transition-shadow">
             <CardHeader className="pb-3">
               <div className="flex items-start justify-between">
                 <div className="flex-1">
                   <CardTitle className="text-lg">
-                    {salaryData.title}
+                    {salary.title}
                   </CardTitle>
                   <CardDescription className="text-base font-medium text-gray-700">
-                    {salaryData.company}
+                    {salary.company}
                   </CardDescription>
                 </div>
               <div className="flex items-center space-x-2">
-                {salaryData.isCurrentPosition && (
+                {salary.isCurrentPosition && (
                   <Badge
                     variant="secondary"
                     className="bg-green-100 text-green-800"
@@ -130,8 +132,8 @@ export function SalaryList({
                 <div className="text-right">
                   <div className="text-lg font-semibold text-gray-900">
                     {formatCurrency(
-                      salaryData.amount,
-                      salaryData.currency
+                      salary.amount,
+                      salary.currency
                     )}
                   </div>
                   <div className="text-sm text-gray-500">per year</div>
@@ -144,13 +146,13 @@ export function SalaryList({
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
               <div className="flex items-center text-gray-600">
                 <MapPin className="h-4 w-4 mr-2" />
-                {salaryData.location}
+                Location: N/A
               </div>
               <div className="flex items-center text-gray-600">
                 <Calendar className="h-4 w-4 mr-2" />
-                {formatDate(salaryData.startDate)}
-                {salaryData.endDate && (
-                  <span> - {formatDate(salaryData.endDate)}</span>
+                {formatDate(salary.startDate)}
+                {salary.endDate && (
+                  <span> - {formatDate(salary.endDate)}</span>
                 )}
               </div>
               <div className="flex items-center justify-end space-x-2">
@@ -179,13 +181,7 @@ export function SalaryList({
               </div>
             </div>
 
-            {salaryData.notes && (
-              <div className="mt-3 pt-3 border-t border-gray-200">
-                <p className="text-sm text-gray-600">
-                  {salaryData.notes}
-                </p>
-              </div>
-            )}
+            {/* Notes not available in summary data - would need full record */}
           </CardContent>
         </Card>
         );

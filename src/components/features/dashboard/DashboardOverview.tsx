@@ -19,6 +19,8 @@ import {
 import { useCompensationSummaries, SummaryUtils, type SalarySummary, type BonusSummary, type EquitySummary } from '@/hooks/useCompensationSummaries';
 import { useAnalytics } from '@/hooks/useAnalytics';
 import { HistoryLoadingScreen } from '@/components/ui/HistoryLoadingScreen';
+import { DashboardSkeleton } from '@/components/ui/DashboardSkeleton';
+import { useSmartLoading } from '@/hooks/useSmartLoading';
 import { CacheMonitor } from '@/components/features/cache/CacheMonitor';
 import { useState } from 'react';
 
@@ -35,6 +37,12 @@ export function DashboardOverview() {
 
   // OPTIMIZED SUMMARIES: Use summary hook for faster dashboard loading
   const { summaries, loading: isLoading, error } = useCompensationSummaries();
+  
+  // SMART LOADING: Only show loading screen for slow operations (>150ms)
+  const { showLoadingScreen, showSkeleton } = useSmartLoading(isLoading, {
+    minLoadingTime: 150, // Show skeleton for fast ops, loading screen for slow ones
+    useSkeletonForFast: true,
+  });
 
   // Track page view once on mount
   useEffect(() => {
@@ -157,14 +165,19 @@ export function DashboardOverview() {
     }
   };
 
-  // Show loading screen for initial data load
-  if (isLoading) {
+  // Show loading screen only for genuinely slow operations
+  if (showLoadingScreen) {
     return (
       <HistoryLoadingScreen
         message="Loading your compensation summary..."
         stage="decrypting"
       />
     );
+  }
+  
+  // Show lightweight skeleton for fast operations
+  if (showSkeleton) {
+    return <DashboardSkeleton />;
   }
 
   // Show error state if there's an error
