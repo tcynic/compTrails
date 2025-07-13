@@ -13,9 +13,18 @@
  */
 
 import type { CompensationSummary } from '@/hooks/useCompensationSummaries';
+import type { DecryptedCompensationRecord } from '@/hooks/useCompensationData';
 
 interface SessionCacheEntry {
   summaries: CompensationSummary[];
+  userId: string;
+  cachedAt: number;
+  expiresAt: number;
+  dataVersion: string; // Hash of data for change detection
+}
+
+interface FullRecordsCacheEntry {
+  records: DecryptedCompensationRecord[];
   userId: string;
   cachedAt: number;
   expiresAt: number;
@@ -27,18 +36,27 @@ interface CacheStats {
   misses: number;
   invalidations: number;
   totalRequests: number;
+  fullRecordHits: number;
+  fullRecordMisses: number;
+  fullRecordRequests: number;
 }
 
 export class SessionDataCache {
   private static instance: SessionDataCache;
   private cache: Map<string, SessionCacheEntry> = new Map();
+  private fullRecordsCache: Map<string, FullRecordsCacheEntry> = new Map();
   private readonly TTL_MS = 10 * 60 * 1000; // 10 minutes (shorter than key cache)
+  private readonly FULL_RECORDS_TTL_MS = 15 * 60 * 1000; // 15 minutes for full records
   private readonly MAX_ENTRIES = 5; // Limit memory usage
+  private readonly MAX_FULL_RECORD_ENTRIES = 3; // Smaller limit for full records due to size
   private stats: CacheStats = {
     hits: 0,
     misses: 0,
     invalidations: 0,
     totalRequests: 0,
+    fullRecordHits: 0,
+    fullRecordMisses: 0,
+    fullRecordRequests: 0,
   };
 
   private constructor() {
@@ -68,12 +86,39 @@ export class SessionDataCache {
   }
 
   /**
+   * Generate cache key for full records
+   */
+  private generateFullRecordsCacheKey(userId: string): string {
+    return `fullRecords:${userId}`;
+  }
+
+  /**
    * Generate data version hash for change detection
    */
   private generateDataVersion(summaries: CompensationSummary[]): string {
     // Create a simple hash based on record count, IDs, and modification times
     const dataString = summaries
       .map(s => `${s.id}:${s.createdAt}:${s.type}`)
+      .sort()
+      .join('|');
+    
+    // Simple hash function
+    let hash = 0;
+    for (let i = 0; i < dataString.length; i++) {
+      const char = dataString.charCodeAt(i);
+      hash = ((hash << 5) - hash) + char;
+      hash = hash & hash; // Convert to 32-bit integer
+    }
+    return Math.abs(hash).toString(36);
+  }
+
+  /**
+   * Generate data version hash for full records
+   */
+  private generateFullRecordsDataVersion(records: DecryptedCompensationRecord[]): string {
+    // Create a more comprehensive hash for full records
+    const dataString = records
+      .map(r => `${r.id}:${r.createdAt}:${r.type}:${r.lastModified || r.createdAt}`)
       .sort()
       .join('|');
     
@@ -158,6 +203,93 @@ export class SessionDataCache {
   }
 
   /**
+   * Get cached full records if available and valid
+   */
+  getFullRecords(userId: string): DecryptedCompensationRecord[] | null {
+    this.stats.fullRecordRequests++;
+    
+    const cacheKey = this.generateFullRecordsCacheKey(userId);
+    const cached = this.fullRecordsCache.get(cacheKey);
+    
+    if (!cached) {
+      this.stats.fullRecordMisses++;
+      console.log(`[SessionDataCache] Full records cache MISS for user ${userId.substring(0, 8)}...`);
+      return null;
+    }
+    
+    // Check if expired
+    if (cached.expiresAt <= Date.now()) {
+      this.fullRecordsCache.delete(cacheKey);
+      this.stats.fullRecordMisses++;
+      console.log(`[SessionDataCache] Full records cache EXPIRED for user ${userId.substring(0, 8)}...`);
+      return null;
+    }
+    
+    // Check if user matches (safety check)
+    if (cached.userId !== userId) {
+      this.fullRecordsCache.delete(cacheKey);
+      this.stats.fullRecordMisses++;
+      console.log(`[SessionDataCache] Full records cache INVALID USER for ${userId.substring(0, 8)}...`);
+      return null;
+    }
+    
+    this.stats.fullRecordHits++;
+    console.log(`[SessionDataCache] Full records cache HIT for user ${userId.substring(0, 8)}... (${cached.records.length} records)`);
+    return cached.records;
+  }
+
+  /**
+   * Cache full records for future use
+   */
+  setFullRecords(userId: string, records: DecryptedCompensationRecord[]): void {
+    const cacheKey = this.generateFullRecordsCacheKey(userId);
+    const now = Date.now();
+    const dataVersion = this.generateFullRecordsDataVersion(records);
+    
+    // Check if data actually changed
+    const existing = this.fullRecordsCache.get(cacheKey);
+    if (existing && existing.dataVersion === dataVersion) {
+      // Data hasn't changed, just update expiry
+      existing.expiresAt = now + this.FULL_RECORDS_TTL_MS;
+      console.log(`[SessionDataCache] Full records data unchanged, refreshed TTL for user ${userId.substring(0, 8)}...`);
+      return;
+    }
+    
+    const entry: FullRecordsCacheEntry = {
+      records: records.map(r => ({ ...r })), // Deep clone to prevent mutations
+      userId,
+      cachedAt: now,
+      expiresAt: now + this.FULL_RECORDS_TTL_MS,
+      dataVersion,
+    };
+    
+    // Enforce memory limits for full records
+    if (this.fullRecordsCache.size >= this.MAX_FULL_RECORD_ENTRIES) {
+      this.evictOldestFullRecordsEntry();
+    }
+    
+    this.fullRecordsCache.set(cacheKey, entry);
+    
+    // Calculate approximate memory usage
+    const avgRecordSize = 1024; // ~1KB per full record (rough estimate)
+    const memoryKB = Math.round((records.length * avgRecordSize) / 1024);
+    
+    console.log(`[SessionDataCache] Cached ${records.length} full records for user ${userId.substring(0, 8)}... (version: ${dataVersion}, ~${memoryKB}KB)`);
+  }
+
+  /**
+   * Check if cached full records are available for user
+   */
+  hasCachedFullRecords(userId: string): boolean {
+    const cacheKey = this.generateFullRecordsCacheKey(userId);
+    const cached = this.fullRecordsCache.get(cacheKey);
+    
+    return !!(cached && 
+             cached.expiresAt > Date.now() && 
+             cached.userId === userId);
+  }
+
+  /**
    * Check if cached data is available for user
    */
   hasCachedSummaries(userId: string): boolean {
@@ -187,10 +319,22 @@ export class SessionDataCache {
    * Invalidate cache for specific user
    */
   invalidateUser(userId: string): void {
-    const cacheKey = this.generateCacheKey(userId);
-    if (this.cache.delete(cacheKey)) {
-      this.stats.invalidations++;
-      console.log(`[SessionDataCache] Invalidated cache for user ${userId.substring(0, 8)}...`);
+    const summariesCacheKey = this.generateCacheKey(userId);
+    const fullRecordsCacheKey = this.generateFullRecordsCacheKey(userId);
+    
+    let invalidatedCount = 0;
+    
+    if (this.cache.delete(summariesCacheKey)) {
+      invalidatedCount++;
+    }
+    
+    if (this.fullRecordsCache.delete(fullRecordsCacheKey)) {
+      invalidatedCount++;
+    }
+    
+    if (invalidatedCount > 0) {
+      this.stats.invalidations += invalidatedCount;
+      console.log(`[SessionDataCache] Invalidated ${invalidatedCount} cache entries for user ${userId.substring(0, 8)}...`);
     }
   }
 
@@ -198,10 +342,14 @@ export class SessionDataCache {
    * Clear all cached data
    */
   clearAll(): void {
-    const entriesCleared = this.cache.size;
+    const summariesCleared = this.cache.size;
+    const fullRecordsCleared = this.fullRecordsCache.size;
+    const totalCleared = summariesCleared + fullRecordsCleared;
+    
     this.cache.clear();
-    this.stats.invalidations += entriesCleared;
-    console.log(`[SessionDataCache] Cleared all cache (${entriesCleared} entries)`);
+    this.fullRecordsCache.clear();
+    this.stats.invalidations += totalCleared;
+    console.log(`[SessionDataCache] Cleared all cache (${summariesCleared} summaries + ${fullRecordsCleared} full record entries = ${totalCleared} total)`);
   }
 
   /**
@@ -209,25 +357,41 @@ export class SessionDataCache {
    */
   getStats(): CacheStats & { 
     cacheSize: number; 
+    fullRecordsCacheSize: number;
     hitRate: number;
+    fullRecordsHitRate: number;
     memoryUsageEstimate: string;
   } {
     const hitRate = this.stats.totalRequests > 0 
       ? (this.stats.hits / this.stats.totalRequests) * 100 
       : 0;
     
-    // Rough memory usage estimate
+    const fullRecordsHitRate = this.stats.fullRecordRequests > 0
+      ? (this.stats.fullRecordHits / this.stats.fullRecordRequests) * 100
+      : 0;
+    
+    // Memory usage estimate for summaries
     const avgSummarySize = 200; // bytes per summary (rough estimate)
     const totalSummaries = Array.from(this.cache.values())
       .reduce((sum, entry) => sum + entry.summaries.length, 0);
-    const memoryBytes = totalSummaries * avgSummarySize;
-    const memoryKB = Math.round(memoryBytes / 1024);
+    const summariesMemoryBytes = totalSummaries * avgSummarySize;
+    
+    // Memory usage estimate for full records
+    const avgFullRecordSize = 1024; // bytes per full record (rough estimate)
+    const totalFullRecords = Array.from(this.fullRecordsCache.values())
+      .reduce((sum, entry) => sum + entry.records.length, 0);
+    const fullRecordsMemoryBytes = totalFullRecords * avgFullRecordSize;
+    
+    const totalMemoryBytes = summariesMemoryBytes + fullRecordsMemoryBytes;
+    const totalMemoryKB = Math.round(totalMemoryBytes / 1024);
     
     return {
       ...this.stats,
       cacheSize: this.cache.size,
+      fullRecordsCacheSize: this.fullRecordsCache.size,
       hitRate: Math.round(hitRate * 100) / 100,
-      memoryUsageEstimate: `${memoryKB} KB`,
+      fullRecordsHitRate: Math.round(fullRecordsHitRate * 100) / 100,
+      memoryUsageEstimate: `${totalMemoryKB} KB (${Math.round(summariesMemoryBytes/1024)}KB summaries + ${Math.round(fullRecordsMemoryBytes/1024)}KB full records)`,
     };
   }
 
@@ -247,7 +411,27 @@ export class SessionDataCache {
     
     if (oldestKey) {
       this.cache.delete(oldestKey);
-      console.log(`[SessionDataCache] Evicted oldest entry: ${oldestKey}`);
+      console.log(`[SessionDataCache] Evicted oldest summaries entry: ${oldestKey}`);
+    }
+  }
+
+  /**
+   * Remove oldest full records cache entry to free memory
+   */
+  private evictOldestFullRecordsEntry(): void {
+    let oldestKey: string | null = null;
+    let oldestTime = Date.now();
+    
+    for (const [key, entry] of this.fullRecordsCache.entries()) {
+      if (entry.cachedAt < oldestTime) {
+        oldestTime = entry.cachedAt;
+        oldestKey = key;
+      }
+    }
+    
+    if (oldestKey) {
+      this.fullRecordsCache.delete(oldestKey);
+      console.log(`[SessionDataCache] Evicted oldest full records entry: ${oldestKey}`);
     }
   }
 
@@ -270,17 +454,28 @@ export class SessionDataCache {
    */
   private cleanupExpiredEntries(): void {
     const now = Date.now();
-    let expiredCount = 0;
+    let expiredSummariesCount = 0;
+    let expiredFullRecordsCount = 0;
     
+    // Clean up expired summaries
     for (const [key, entry] of this.cache.entries()) {
       if (entry.expiresAt <= now) {
         this.cache.delete(key);
-        expiredCount++;
+        expiredSummariesCount++;
       }
     }
     
-    if (expiredCount > 0) {
-      console.log(`[SessionDataCache] Cleaned up ${expiredCount} expired entries`);
+    // Clean up expired full records
+    for (const [key, entry] of this.fullRecordsCache.entries()) {
+      if (entry.expiresAt <= now) {
+        this.fullRecordsCache.delete(key);
+        expiredFullRecordsCount++;
+      }
+    }
+    
+    const totalExpired = expiredSummariesCount + expiredFullRecordsCount;
+    if (totalExpired > 0) {
+      console.log(`[SessionDataCache] Cleaned up ${totalExpired} expired entries (${expiredSummariesCount} summaries + ${expiredFullRecordsCount} full records)`);
     }
   }
 
@@ -290,12 +485,16 @@ export class SessionDataCache {
   private logStats(): void {
     const stats = this.getStats();
     console.log('[SessionDataCache] Session statistics:', {
-      requests: stats.totalRequests,
-      hits: stats.hits,
-      misses: stats.misses,
-      hitRate: `${stats.hitRate}%`,
+      summariesRequests: stats.totalRequests,
+      summariesHits: stats.hits,
+      summariesMisses: stats.misses,
+      summariesHitRate: `${stats.hitRate}%`,
+      fullRecordsRequests: stats.fullRecordRequests,
+      fullRecordsHits: stats.fullRecordHits,
+      fullRecordsMisses: stats.fullRecordMisses,
+      fullRecordsHitRate: `${stats.fullRecordsHitRate}%`,
       invalidations: stats.invalidations,
-      finalCacheSize: stats.cacheSize,
+      finalCacheSize: `${stats.cacheSize} summaries + ${stats.fullRecordsCacheSize} full records`,
       memoryUsage: stats.memoryUsageEstimate,
     });
   }

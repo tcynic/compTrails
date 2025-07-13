@@ -22,6 +22,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useSecurePassword } from '@/hooks/usePassword';
 import { EncryptionService } from '@/services/encryptionService';
 import { LocalStorageService } from '@/services/localStorageService';
+import { sessionDataCache } from '@/services/sessionDataCache';
 import { format, addYears } from 'date-fns';
 
 interface AddEquityFormProps {
@@ -87,6 +88,9 @@ export function AddEquityForm({ isOpen, onClose, onSuccess }: AddEquityFormProps
         syncStatus: 'pending',
         version: 1,
       });
+
+      // Invalidate session cache to ensure fresh data on next page load
+      sessionDataCache.invalidateUser(user.id);
 
       onSuccess();
       onClose();

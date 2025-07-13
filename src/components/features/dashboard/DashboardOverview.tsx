@@ -19,6 +19,7 @@ import {
 import { useCompensationSummaries, SummaryUtils, type SalarySummary, type BonusSummary, type EquitySummary } from '@/hooks/useCompensationSummaries';
 import { useAnalytics } from '@/hooks/useAnalytics';
 import { HistoryLoadingScreen } from '@/components/ui/HistoryLoadingScreen';
+import { CacheMonitor } from '@/components/features/cache/CacheMonitor';
 import { useState } from 'react';
 
 // Lazy load the export dialog since it's not used immediately
@@ -353,6 +354,9 @@ export function DashboardOverview() {
           )}
         </CardContent>
       </Card>
+
+      {/* Cache Performance Monitor (Development Only) */}
+      <CacheMonitor />
 
       {/* Export Dialog */}
       <ExportDialog 

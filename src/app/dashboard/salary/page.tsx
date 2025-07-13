@@ -15,6 +15,7 @@ import {
   DialogFooter 
 } from '@/components/ui/dialog';
 import { LocalStorageService } from '@/services/localStorageService';
+import { sessionDataCache } from '@/services/sessionDataCache';
 import { AnalyticsService } from '@/services/analyticsService';
 import { Plus, Trash2 } from 'lucide-react';
 
@@ -93,6 +94,11 @@ export default function SalaryPage() {
         data_type: 'salary',
         action: 'delete',
       });
+      
+      // Invalidate session cache to ensure fresh data on next page load
+      if (user?.id) {
+        sessionDataCache.invalidateUser(user.id);
+      }
       
       // Close dialog and refresh list
       setDeleteRecord(null);

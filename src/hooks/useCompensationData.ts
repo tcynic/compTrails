@@ -68,6 +68,14 @@ export function useCompensationData(
   const lastLoadTimeRef = useRef<number>(0);
   const instanceIdRef = useRef(Math.random().toString(36).substring(2, 8));
   
+  /**
+   * Filter cached full records by type if needed
+   */
+  const filterCachedRecordsByType = useCallback((records: DecryptedCompensationRecord[], requestedType?: CompensationType): DecryptedCompensationRecord[] => {
+    if (!requestedType) return records;
+    return records.filter(record => record.type === requestedType);
+  }, []);
+  
   // Enhanced debugging state (used in effect below)
   // const debugInfo = {
   //   userId: user?.id || 'null',
@@ -161,7 +169,7 @@ export function useCompensationData(
   
   /**
    * Main data loading function
-   * Implements local-first loading with background sync
+   * Implements local-first loading with full record caching and background sync
    */
   const loadData = useCallback(async () => {
     if (!stableUserId || !password || isLoadingRef.current) {
@@ -173,8 +181,39 @@ export function useCompensationData(
       isLoadingRef.current = true;
       setError(null);
       
-      // LOCAL-FIRST: Load from IndexedDB immediately
+      // TIER 1: Check session cache for full records first (instant loading)
+      const cachedFullRecords = sessionDataCache.getFullRecords(stableUserId);
+      if (cachedFullRecords) {
+        // Filter by type if needed
+        const filteredCachedRecords = filterCachedRecordsByType(cachedFullRecords, type);
+        
+        setData(filteredCachedRecords);
+        setLoading(false);
+        setIsStale(false);
+        console.log(`[useCompensationData:${type || 'all'}] Loaded ${filteredCachedRecords.length} records from session cache (instant)`);
+        
+        // Still trigger background sync to keep data fresh
+        if (backgroundSync && navigator.onLine) {
+          SyncService.triggerBidirectionalSync(stableUserId, password)
+            .then(() => {
+              sessionDataCache.invalidateUser(stableUserId);
+            })
+            .catch(error => console.warn('[useCompensationData] Background sync failed:', error));
+        }
+        
+        lastLoadTimeRef.current = Date.now();
+        isLoadingRef.current = false;
+        return;
+      }
+      
+      // TIER 2: Load from IndexedDB and cache full records for future use
       const localData = await loadDataFromLocal();
+      
+      // Cache full records for future instant loading (only if loading all data)
+      if (!type && localData.length > 0) {
+        sessionDataCache.setFullRecords(stableUserId, localData);
+        console.log(`[useCompensationData:${type || 'all'}] Cached ${localData.length} full records for future instant loading`);
+      }
       
       // Check if we have no local data - trigger initial pull from Convex
       const hasNoLocalData = localData.length === 0;
@@ -192,8 +231,11 @@ export function useCompensationData(
           setLoading(false);
           setIsStale(false);
           
-          // Invalidate session cache since data changed
+          // Cache the new synced data and invalidate old session cache
           sessionDataCache.invalidateUser(stableUserId);
+          if (!type && syncedData.length > 0) {
+            sessionDataCache.setFullRecords(stableUserId, syncedData);
+          }
           
           console.log(`[useCompensationData] Initial sync completed: ${syncedData.length} records loaded`);
           
@@ -229,6 +271,12 @@ export function useCompensationData(
                   if (JSON.stringify(updatedData) !== JSON.stringify(localData)) {
                     setData(updatedData);
                     setIsStale(false);
+                    
+                    // Update cached full records after background sync
+                    if (!type && updatedData.length > 0) {
+                      sessionDataCache.setFullRecords(stableUserId, updatedData);
+                    }
+                    
                     console.log(`[useCompensationData] Background sync updated data: ${updatedData.length} records`);
                   }
                 }
@@ -254,7 +302,7 @@ export function useCompensationData(
     } finally {
       isLoadingRef.current = false;
     }
-  }, [stableUserId, password, type, backgroundSync, loadDataFromLocal]);
+  }, [stableUserId, password, type, backgroundSync, loadDataFromLocal, filterCachedRecordsByType]);
   
   /**
    * Manual refetch function
