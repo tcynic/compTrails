@@ -118,7 +118,7 @@ export class SessionDataCache {
   private generateFullRecordsDataVersion(records: DecryptedCompensationRecord[]): string {
     // Create a more comprehensive hash for full records
     const dataString = records
-      .map(r => `${r.id}:${r.createdAt}:${r.type}:${r.lastModified || r.createdAt}`)
+      .map(r => `${r.id}:${r.createdAt}:${r.type}:${r.updatedAt}`)
       .sort()
       .join('|');
     

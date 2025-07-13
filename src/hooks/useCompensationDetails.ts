@@ -151,7 +151,7 @@ export function useCompensationDetails() {
 
       throw error;
     }
-  }, [user?.id, password, state.cache]);
+  }, [user?.id, password, state.cache, state.loading]);
 
   /**
    * Load multiple records in batch (more efficient)
