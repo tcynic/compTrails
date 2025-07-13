@@ -62,6 +62,19 @@ export function useCompensationData(
   const isLoadingRef = useRef(false);
   const lastLoadTimeRef = useRef<number>(0);
   
+  // Enhanced debugging state
+  const debugInfo = {
+    userId: user?.id || 'null',
+    hasPassword: !!password,
+    isOnline: navigator?.onLine ?? false,
+    hookType: type || 'all',
+    backgroundSync,
+    autoRefresh,
+  };
+  
+  // Log authentication and password state for debugging
+  console.log(`[useCompensationData:${type || 'all'}] Hook state:`, debugInfo);
+  
   /**
    * Load data from local storage (IndexedDB) - PRIMARY DATA SOURCE
    * This follows the local-first architecture principle
@@ -127,35 +140,67 @@ export function useCompensationData(
       
       // LOCAL-FIRST: Load from IndexedDB immediately
       const localData = await loadDataFromLocal();
-      setData(localData);
-      setLoading(false); // UI updates immediately with local data
-      lastLoadTimeRef.current = Date.now();
       
-      // BACKGROUND SYNC: Trigger sync with Convex if enabled
-      if (backgroundSync && navigator.onLine) {
+      // Check if we have no local data - trigger initial pull from Convex
+      const hasNoLocalData = localData.length === 0;
+      
+      if (hasNoLocalData && backgroundSync && navigator.onLine) {
+        console.log(`[useCompensationData] No local ${type || 'compensation'} data found, triggering initial pull from Convex`);
+        
         try {
-          // Trigger background sync - this doesn't block UI
-          SyncService.triggerSync(user.id);
+          // Use bidirectional sync to pull data from Convex first
+          await SyncService.triggerBidirectionalSync(user.id, password);
           
-          // Check if we need to reload after sync
-          setTimeout(async () => {
-            try {
-              const updatedData = await loadDataFromLocal();
-              if (JSON.stringify(updatedData) !== JSON.stringify(localData)) {
-                setData(updatedData);
-                setIsStale(false);
-              }
-            } catch (syncError) {
-              console.warn('Background data refresh failed:', syncError);
-              setIsStale(true);
-            }
-          }, 1000); // Give sync time to complete
+          // Reload data after sync
+          const syncedData = await loadDataFromLocal();
+          setData(syncedData);
+          setLoading(false);
+          setIsStale(false);
+          
+          console.log(`[useCompensationData] Initial sync completed: ${syncedData.length} records loaded`);
           
         } catch (syncError) {
-          console.warn('Background sync failed:', syncError);
+          console.error(`[useCompensationData] Initial sync failed:`, syncError);
+          // Still show whatever local data we have (which might be empty)
+          setData(localData);
+          setLoading(false);
           setIsStale(true);
+          setError('Failed to sync data from server. Working in offline mode.');
+        }
+      } else {
+        // We have local data, update UI immediately
+        setData(localData);
+        setLoading(false);
+        
+        // BACKGROUND SYNC: Trigger bidirectional sync if enabled
+        if (backgroundSync && navigator.onLine) {
+          try {
+            // Use bidirectional sync for background updates - this doesn't block UI
+            SyncService.triggerBidirectionalSync(user.id, password);
+            
+            // Check if we need to reload after sync
+            setTimeout(async () => {
+              try {
+                const updatedData = await loadDataFromLocal();
+                if (JSON.stringify(updatedData) !== JSON.stringify(localData)) {
+                  setData(updatedData);
+                  setIsStale(false);
+                  console.log(`[useCompensationData] Background sync updated data: ${updatedData.length} records`);
+                }
+              } catch (syncError) {
+                console.warn('[useCompensationData] Background data refresh failed:', syncError);
+                setIsStale(true);
+              }
+            }, 2000); // Give bidirectional sync more time to complete
+            
+          } catch (syncError) {
+            console.warn('[useCompensationData] Background sync failed:', syncError);
+            setIsStale(true);
+          }
         }
       }
+      
+      lastLoadTimeRef.current = Date.now();
       
     } catch (loadError) {
       console.error(`Error loading ${type || 'compensation'} data:`, loadError);

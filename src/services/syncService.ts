@@ -1614,6 +1614,174 @@ export class SyncService {
     // Register background sync for this operation
     await this.registerBackgroundSync(operation, recordId);
   }
+
+  /**
+   * Pull data from Convex and sync to local IndexedDB (bidirectional sync)
+   * This is the missing piece that allows data to flow FROM Convex TO local storage
+   */
+  static async pullFromConvex(userId: string, _password: string): Promise<{
+    success: boolean;
+    recordsAdded: number;
+    recordsUpdated: number;
+    errors: string[];
+  }> {
+    if (!this.convexClient) {
+      throw new Error('Convex client not initialized');
+    }
+
+    if (!this.isOnline) {
+      console.log('[SyncService] Cannot pull from Convex - offline');
+      return { success: false, recordsAdded: 0, recordsUpdated: 0, errors: ['Offline'] };
+    }
+
+    const result = {
+      success: true,
+      recordsAdded: 0,
+      recordsUpdated: 0,
+      errors: [] as string[]
+    };
+
+    try {
+      console.log(`[SyncService] Starting pull from Convex for user ${userId}`);
+      
+      // Get all records from Convex for this user
+      const convexRecords = await this.convexClient.query(api.compensationRecords.getCompensationRecords, {
+        userId
+      });
+
+      console.log(`[SyncService] Found ${convexRecords.length} records in Convex`);
+
+      // Get all local records for comparison
+      const localRecords = await LocalStorageService.getCompensationRecords(userId);
+      console.log(`[SyncService] Found ${localRecords.length} records in local storage`);
+
+      // Create maps for efficient comparison
+      const localByConvexId = new Map();
+      const localByLocalId = new Map();
+      
+      for (const local of localRecords) {
+        if (local.convexId) {
+          localByConvexId.set(local.convexId, local);
+        }
+        if (local.id) {
+          localByLocalId.set(local.id, local);
+        }
+      }
+
+      // Process each Convex record
+      for (const convexRecord of convexRecords) {
+        try {
+          const existingLocal = localByConvexId.get(convexRecord._id);
+          
+          if (!existingLocal) {
+            // This is a new record from Convex that doesn't exist locally
+            // Add it to local storage
+            console.log(`[SyncService] Adding new record from Convex: ${convexRecord._id}`);
+            
+            const newLocalRecord = {
+              userId: convexRecord.userId,
+              type: convexRecord.type,
+              encryptedData: {
+                encryptedData: convexRecord.encryptedData.data,
+                iv: convexRecord.encryptedData.iv,
+                salt: convexRecord.encryptedData.salt,
+                algorithm: 'AES-GCM' as const,
+                keyDerivation: 'Argon2id' as const,
+              },
+              currency: convexRecord.currency,
+              createdAt: convexRecord.createdAt,
+              updatedAt: convexRecord.updatedAt || convexRecord.createdAt,
+              version: convexRecord.version || 1,
+              syncStatus: 'synced' as const,
+              lastSyncAt: Date.now(),
+              convexId: convexRecord._id,
+              localId: convexRecord.localId || undefined,
+            };
+
+            const localId = await LocalStorageService.addCompensationRecord(newLocalRecord);
+            console.log(`[SyncService] Added record ${convexRecord._id} as local ID ${localId}`);
+            result.recordsAdded++;
+            
+          } else {
+            // Record exists locally, check if Convex version is newer
+            const convexVersion = convexRecord.version || 1;
+            const localVersion = existingLocal.version || 1;
+            const convexUpdatedAt = convexRecord.updatedAt || convexRecord.createdAt;
+            const localUpdatedAt = existingLocal.updatedAt || existingLocal.createdAt;
+            
+            if (convexVersion > localVersion || convexUpdatedAt > localUpdatedAt) {
+              console.log(`[SyncService] Updating local record ${existingLocal.id} with newer Convex data`);
+              
+              const updates = {
+                encryptedData: {
+                  encryptedData: convexRecord.encryptedData.data,
+                  iv: convexRecord.encryptedData.iv,
+                  salt: convexRecord.encryptedData.salt,
+                  algorithm: 'AES-GCM' as const,
+                  keyDerivation: 'Argon2id' as const,
+                },
+                currency: convexRecord.currency,
+                updatedAt: convexUpdatedAt,
+                version: convexVersion,
+                syncStatus: 'synced' as const,
+                lastSyncAt: Date.now(),
+              };
+              
+              await LocalStorageService.updateCompensationRecord(existingLocal.id!, updates);
+              console.log(`[SyncService] Updated local record ${existingLocal.id}`);
+              result.recordsUpdated++;
+            }
+          }
+        } catch (recordError) {
+          const errorMsg = `Failed to process record ${convexRecord._id}: ${recordError instanceof Error ? recordError.message : 'Unknown error'}`;
+          console.error(`[SyncService] ${errorMsg}`);
+          result.errors.push(errorMsg);
+          result.success = false;
+        }
+      }
+
+      console.log(`[SyncService] Pull from Convex completed: ${result.recordsAdded} added, ${result.recordsUpdated} updated, ${result.errors.length} errors`);
+      
+      return result;
+    } catch (error) {
+      const errorMsg = `Pull from Convex failed: ${error instanceof Error ? error.message : 'Unknown error'}`;
+      console.error(`[SyncService] ${errorMsg}`);
+      result.errors.push(errorMsg);
+      result.success = false;
+      return result;
+    }
+  }
+
+  /**
+   * Enhanced bidirectional sync that pulls from Convex first, then pushes pending changes
+   */
+  static async triggerBidirectionalSync(userId: string, password: string): Promise<void> {
+    if (!this.isOnline || this.syncInProgress) {
+      return;
+    }
+
+    this.syncInProgress = true;
+    this.notifyListeners(this.syncStatus.syncing);
+
+    try {
+      console.log('[SyncService] Starting bidirectional sync');
+      
+      // First: Pull latest data from Convex
+      const pullResult = await this.pullFromConvex(userId, password);
+      console.log(`[SyncService] Pull phase completed: ${pullResult.recordsAdded} added, ${pullResult.recordsUpdated} updated`);
+      
+      // Then: Push any pending local changes
+      await this.processPendingSync(userId);
+      console.log('[SyncService] Push phase completed');
+      
+      this.notifyListeners(this.syncStatus.idle);
+    } catch (error) {
+      console.error('[SyncService] Bidirectional sync failed:', error);
+      this.notifyListeners(this.syncStatus.error);
+    } finally {
+      this.syncInProgress = false;
+    }
+  }
 }
 
 export type SyncStatus = typeof SyncService.syncStatus[keyof typeof SyncService.syncStatus];

@@ -26,6 +26,7 @@ import { useOffline } from '@/components/providers/OfflineProvider';
 import { useAnalytics } from '@/hooks/useAnalytics';
 import { SyncService } from '@/services/syncService';
 import { getSyncConfig, updateSyncConfig } from '@/lib/config/syncConfig';
+import { DuplicateCleanupPanel } from '@/components/admin/DuplicateCleanupPanel';
 
 export default function SettingsPage() {
   const { user } = useAuth();
@@ -109,6 +110,9 @@ export default function SettingsPage() {
             <p className="text-gray-600">Manage your account and application preferences</p>
           </div>
         </div>
+
+        {/* Duplicate Cleanup Panel - Temporary for cleanup process */}
+        <DuplicateCleanupPanel />
 
         {/* Settings Grid */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
