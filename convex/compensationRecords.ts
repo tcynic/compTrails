@@ -16,7 +16,7 @@ export const createCompensationRecord = mutation({
   handler: async (ctx, args) => {
     const now = Date.now();
 
-    // Check for potential duplicates within the last 24 hours to prevent duplicate creation
+    // FIXED: Standardize duplicate detection time window to match client-side (24 hours)
     const twentyFourHoursAgo = now - 24 * 60 * 60 * 1000;
     const recentRecords = await ctx.db
       .query("compensationRecords")
@@ -43,13 +43,14 @@ export const createCompensationRecord = mutation({
         (record) =>
           record.encryptedData.data.length === args.encryptedData.data.length &&
           record.currency === args.currency &&
-          // Additional check: same creation time window (within 5 minutes)
-          Math.abs(record.createdAt - now) < 5 * 60 * 1000
+          // FIXED: Extend time window to 30 minutes for better duplicate catching
+          // This accounts for slow sync operations and network delays
+          Math.abs(record.createdAt - now) < 30 * 60 * 1000
       );
 
       if (sameDataLengthRecord) {
         console.log(
-          `Potential duplicate detected with same data length for user ${args.userId}, updating existing record ${sameDataLengthRecord._id}`
+          `[CONVEX] Potential duplicate detected with same data length for user ${args.userId}, updating existing record ${sameDataLengthRecord._id}`
         );
         
         // Update the existing record's sync timestamp
@@ -64,7 +65,7 @@ export const createCompensationRecord = mutation({
 
     if (existingRecord) {
       console.log(
-        `Duplicate record detected for user ${args.userId}, updating lastSyncAt for record ${existingRecord._id}`
+        `[CONVEX] Exact duplicate detected for user ${args.userId}, updating lastSyncAt for record ${existingRecord._id}`
       );
 
       // Update the lastSyncAt timestamp for the duplicate record
@@ -82,13 +83,13 @@ export const createCompensationRecord = mutation({
       const localIdRecord = recentRecords.find(
         (record) => 
           record.localId === args.localId ||
-          // Also check if we have any record created very recently (same sync batch)
-          (Math.abs(record.createdAt - now) < 30 * 1000) // Within 30 seconds
+          // FIXED: Check for records created in same sync batch (extended window)
+          (Math.abs(record.createdAt - now) < 5 * 60 * 1000) // Within 5 minutes
       );
 
       if (localIdRecord) {
         console.log(
-          `Record with localId ${args.localId} already exists for user ${args.userId}, returning existing record ${localIdRecord._id}`
+          `[CONVEX] Record with localId ${args.localId} already exists for user ${args.userId}, returning existing record ${localIdRecord._id}`
         );
         
         // Update the existing record's sync timestamp

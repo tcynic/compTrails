@@ -61,7 +61,8 @@ export class LocalStorageService {
       };
       currency: string;
     },
-    timeWindowMs: number = 24 * 60 * 60 * 1000 // 24 hours default
+    timeWindowMs: number = 2 * 60 * 60 * 1000 // OPTIMIZED: 2 hours default for better performance
+    // Reduced from 24 hours to improve query performance while still catching most duplicates
   ): Promise<CompensationRecord | null> {
     try {
       const fingerprint = this.generateRecordFingerprint(record);
@@ -85,7 +86,7 @@ export class LocalStorageService {
         });
         
         if (fingerprint === existingFingerprint) {
-          console.log(`Duplicate record detected with fingerprint ${fingerprint}`);
+          console.log(`[LocalStorageService] Duplicate record detected with fingerprint ${fingerprint}, existing record ID: ${existingRecord.id}`);
           return existingRecord;
         }
       }
