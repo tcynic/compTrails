@@ -58,6 +58,21 @@ export class CompTrailsDatabase extends Dexie {
       });
     });
 
+    // CRITICAL FIX: Add version 3 with convexId index to prevent schema errors
+    this.version(3).stores({
+      // Add convexId index to support duplicate detection and sync operations
+      compensationRecords: '++id, userId, type, syncStatus, createdAt, updatedAt, lastSyncAt, convexId',
+      
+      // Keep existing indexes for other tables
+      pendingSync: '++id, userId, operation, tableName, recordId, status, createdAt, lastAttemptAt, attempts',
+      userPreferences: '++id, userId, createdAt, updatedAt',
+      offlineQueue: '++id, method, url, status, timestamp, attempts',
+    }).upgrade(_tx => {
+      // Migration for existing users - no data changes needed, just index addition
+      console.log('[Database] Upgrading to version 3 - adding convexId index for sync operations');
+      // The index will be automatically added to existing records
+    });
+
     // Add hooks for automatic timestamp management
     this.compensationRecords.hook('creating', (primKey, obj) => {
       const now = Date.now();

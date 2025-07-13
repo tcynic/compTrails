@@ -444,10 +444,23 @@ export class LocalStorageService {
     try {
       // CRITICAL FIX: Check if this Convex ID is already assigned to another local record
       // This prevents the ID collision issue where multiple local records get same Convex ID
-      const existingRecord = await db.compensationRecords
-        .where('convexId')
-        .equals(convexId)
-        .first();
+      let existingRecord = null;
+      try {
+        existingRecord = await db.compensationRecords
+          .where('convexId')
+          .equals(convexId)
+          .first();
+      } catch (error) {
+        // Handle case where convexId index doesn't exist yet (database migration in progress)
+        if (error instanceof Error && error.message.includes('not indexed')) {
+          console.log('[LocalStorageService] convexId index not available yet, using full table scan for collision detection');
+          // Fallback: scan all records to check for collisions (less efficient but works)
+          const allRecords = await db.compensationRecords.toArray();
+          existingRecord = allRecords.find(record => record.convexId === convexId);
+        } else {
+          throw error; // Re-throw other errors
+        }
+      }
       
       if (existingRecord && existingRecord.id !== localId) {
         console.warn(`[LocalStorageService] Convex ID ${convexId} already assigned to local record ${existingRecord.id}, skipping assignment to record ${localId}`);
