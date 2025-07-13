@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useSecurePassword } from '@/hooks/usePassword';
 import { LocalStorageService } from '@/services/localStorageService';
@@ -58,29 +58,43 @@ export function useCompensationData(
   const { user } = useAuth();
   const password = useSecurePassword();
   
+  // Memoize stable values to prevent unnecessary re-renders
+  const stableUserId = useMemo(() => user?.id, [user?.id]);
+  const hasPassword = useMemo(() => !!password, [password]);
+  
   // Ref to prevent multiple simultaneous loads
   const isLoadingRef = useRef(false);
   const lastLoadTimeRef = useRef<number>(0);
+  const instanceIdRef = useRef(Math.random().toString(36).substring(2, 8));
   
-  // Enhanced debugging state
-  const debugInfo = {
-    userId: user?.id || 'null',
-    hasPassword: !!password,
-    isOnline: navigator?.onLine ?? false,
-    hookType: type || 'all',
-    backgroundSync,
-    autoRefresh,
-  };
+  // Enhanced debugging state (used in effect below)
+  // const debugInfo = {
+  //   userId: user?.id || 'null',
+  //   hasPassword: !!password,
+  //   isOnline: navigator?.onLine ?? false,
+  //   hookType: type || 'all',
+  //   backgroundSync,
+  //   autoRefresh,
+  // };
   
-  // Log authentication and password state for debugging
-  console.log(`[useCompensationData:${type || 'all'}] Hook state:`, debugInfo);
+  // Log authentication and password state for debugging (only when values change)
+  useEffect(() => {
+    console.log(`[useCompensationData:${type || 'all'}] Hook state:`, {
+      userId: stableUserId || 'null',
+      hasPassword,
+      isOnline: navigator?.onLine ?? false,
+      hookType: type || 'all',
+      backgroundSync,
+      autoRefresh,
+    });
+  }, [stableUserId, hasPassword, type, backgroundSync, autoRefresh]);
   
   /**
    * Load data from local storage (IndexedDB) - PRIMARY DATA SOURCE
    * This follows the local-first architecture principle
    */
   const loadDataFromLocal = useCallback(async (): Promise<DecryptedCompensationRecord[]> => {
-    if (!user?.id) {
+    if (!stableUserId) {
       throw new Error('User not authenticated');
     }
     
@@ -89,17 +103,16 @@ export function useCompensationData(
     }
     
     // Load from IndexedDB (local-first)
-    const records = await LocalStorageService.getCompensationRecords(user.id, type);
+    const records = await LocalStorageService.getCompensationRecords(stableUserId, type);
     
     if (records.length === 0) {
       return [];
     }
     
-    // Batch decrypt for performance (as used in existing components)
-    console.time(`[useCompensationData] Batch decryption - ${type || 'all'} - ${records.length} records`);
+    // Batch decrypt for performance with unique timer identifier
     const encryptedDataArray = records.map(record => record.encryptedData);
-    const decryptResults = await EncryptionService.batchDecryptData(encryptedDataArray, password);
-    console.timeEnd(`[useCompensationData] Batch decryption - ${type || 'all'} - ${records.length} records`);
+    const timerPrefix = `useCompensationData[${type || 'all'}]-${instanceIdRef.current}`;
+    const decryptResults = await EncryptionService.batchDecryptData(encryptedDataArray, password, { timerPrefix });
     
     // Process decryption results
     const decryptedRecords = records.map((record, index) => {
@@ -123,14 +136,15 @@ export function useCompensationData(
       .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
     
     return validRecords;
-  }, [user?.id, password, type]);
+  }, [stableUserId, password, type]);
   
   /**
    * Main data loading function
    * Implements local-first loading with background sync
    */
   const loadData = useCallback(async () => {
-    if (!user?.id || !password || isLoadingRef.current) {
+    if (!stableUserId || !password || isLoadingRef.current) {
+      console.log(`[useCompensationData:${type || 'all'}] Skipping load - userId: ${!!stableUserId}, password: ${!!password}, loading: ${isLoadingRef.current}`);
       return;
     }
     
@@ -149,7 +163,7 @@ export function useCompensationData(
         
         try {
           // Use bidirectional sync to pull data from Convex first
-          await SyncService.triggerBidirectionalSync(user.id, password);
+          await SyncService.triggerBidirectionalSync(stableUserId, password);
           
           // Reload data after sync
           const syncedData = await loadDataFromLocal();
@@ -176,16 +190,19 @@ export function useCompensationData(
         if (backgroundSync && navigator.onLine) {
           try {
             // Use bidirectional sync for background updates - this doesn't block UI
-            SyncService.triggerBidirectionalSync(user.id, password);
+            SyncService.triggerBidirectionalSync(stableUserId, password);
             
-            // Check if we need to reload after sync
+            // Check if we need to reload after sync with proper cleanup
             setTimeout(async () => {
               try {
-                const updatedData = await loadDataFromLocal();
-                if (JSON.stringify(updatedData) !== JSON.stringify(localData)) {
-                  setData(updatedData);
-                  setIsStale(false);
-                  console.log(`[useCompensationData] Background sync updated data: ${updatedData.length} records`);
+                // Only refresh if we're still in the same loading session
+                if (!isLoadingRef.current) {
+                  const updatedData = await loadDataFromLocal();
+                  if (JSON.stringify(updatedData) !== JSON.stringify(localData)) {
+                    setData(updatedData);
+                    setIsStale(false);
+                    console.log(`[useCompensationData] Background sync updated data: ${updatedData.length} records`);
+                  }
                 }
               } catch (syncError) {
                 console.warn('[useCompensationData] Background data refresh failed:', syncError);
@@ -209,7 +226,7 @@ export function useCompensationData(
     } finally {
       isLoadingRef.current = false;
     }
-  }, [user?.id, password, type, backgroundSync, loadDataFromLocal]);
+  }, [stableUserId, password, type, backgroundSync, loadDataFromLocal]);
   
   /**
    * Manual refetch function
@@ -221,10 +238,10 @@ export function useCompensationData(
   
   // Initial load on mount and when dependencies change
   useEffect(() => {
-    if (user?.id && password) {
+    if (stableUserId && password) {
       loadData();
     }
-  }, [user?.id, password, loadData]);
+  }, [stableUserId, password, type, loadData]);
   
   // Auto-refresh on window focus if enabled
   useEffect(() => {

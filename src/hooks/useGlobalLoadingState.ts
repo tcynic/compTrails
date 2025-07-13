@@ -1,9 +1,10 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useSalaryData, useBonusData, useEquityData } from './useCompensationData';
+import { useCompensationData } from './useCompensationData';
 import { useAuth } from '@/contexts/AuthContext';
 import { useSecurePassword } from './usePassword';
+import type { DecryptedCompensationRecord } from './useCompensationData';
 
 interface GlobalLoadingState {
   isInitialLoading: boolean;
@@ -17,26 +18,23 @@ interface GlobalLoadingState {
     total: number;
   };
   isFirstVisit: boolean;
+  // Expose filtered data for reuse
+  salaryData: DecryptedCompensationRecord[];
+  bonusData: DecryptedCompensationRecord[];
+  equityData: DecryptedCompensationRecord[];
+  allData: DecryptedCompensationRecord[];
 }
 
 /**
- * Global loading state hook that aggregates loading states from all compensation data hooks
- * Provides unified loading experience for the dashboard
+ * Global loading state hook that uses a SINGLE compensation data hook
+ * Provides unified loading experience for the dashboard without redundant operations
  */
 export function useGlobalLoadingState(): GlobalLoadingState {
   const { user } = useAuth();
   const password = useSecurePassword();
   
-  // Get loading states from all data hooks
-  const { data: salaryData, loading: salaryLoading } = useSalaryData({
-    autoRefresh: true,
-    backgroundSync: true,
-  });
-  const { data: bonusData, loading: bonusLoading } = useBonusData({
-    autoRefresh: true,
-    backgroundSync: true,
-  });
-  const { data: equityData, loading: equityLoading } = useEquityData({
+  // Use a SINGLE hook for all compensation data to prevent multiple concurrent operations
+  const { data: allCompensationData, loading: isLoading } = useCompensationData({
     autoRefresh: true,
     backgroundSync: true,
   });
@@ -45,15 +43,17 @@ export function useGlobalLoadingState(): GlobalLoadingState {
   const [progress, setProgress] = useState(0);
   const [isFirstVisit, setIsFirstVisit] = useState(false);
 
-  // Calculate if any hook is still loading
-  const isAnyLoading = salaryLoading || bonusLoading || equityLoading;
+  // Filter data by type from the single source
+  const salaryData = allCompensationData.filter(record => record.type === 'salary');
+  const bonusData = allCompensationData.filter(record => record.type === 'bonus');
+  const equityData = allCompensationData.filter(record => record.type === 'equity');
   
   // Calculate total record counts
   const recordCounts = {
     salary: salaryData.length,
     bonus: bonusData.length,
     equity: equityData.length,
-    total: salaryData.length + bonusData.length + equityData.length,
+    total: allCompensationData.length,
   };
 
   // Determine if this is the user's first visit (no data)
@@ -67,7 +67,7 @@ export function useGlobalLoadingState(): GlobalLoadingState {
       return;
     }
 
-    if (isAnyLoading) {
+    if (isLoading) {
       // Simulate progress through stages
       // Stage 1: Querying (0-30%)
       setStage('querying');
@@ -104,54 +104,59 @@ export function useGlobalLoadingState(): GlobalLoadingState {
       setStage('complete');
       setProgress(100);
     }
-  }, [isAnyLoading, user, password]);
+  }, [isLoading, user, password]);
 
   // Detect first visit
   useEffect(() => {
-    if (!isAnyLoading && recordCounts.total === 0) {
+    if (!isLoading && recordCounts.total === 0) {
       setIsFirstVisit(true);
     }
-  }, [isAnyLoading, recordCounts.total]);
+  }, [isLoading, recordCounts.total]);
 
   return {
-    isInitialLoading: isAnyLoading,
+    isInitialLoading: isLoading,
     hasData,
     stage,
     progress,
     recordCounts,
     isFirstVisit,
+    // Expose the filtered data for reuse
+    salaryData,
+    bonusData,
+    equityData,
+    allData: allCompensationData,
   };
 }
 
 /**
  * Hook for individual pages to determine if they should show loading state
- * This respects the global loading state while allowing individual refreshes
+ * This reuses the global state data to prevent redundant operations
  */
 export function usePageLoadingState(dataType: 'salary' | 'bonus' | 'equity') {
   const globalState = useGlobalLoadingState();
   
-  // Individual data hooks
-  const salaryHook = useSalaryData({ autoRefresh: true, backgroundSync: true });
-  const bonusHook = useBonusData({ autoRefresh: true, backgroundSync: true });
-  const equityHook = useEquityData({ autoRefresh: true, backgroundSync: true });
-  
-  const hookMap = {
-    salary: salaryHook,
-    bonus: bonusHook,
-    equity: equityHook,
+  // Use data from the global state instead of creating new hooks
+  const dataMap = {
+    salary: globalState.salaryData,
+    bonus: globalState.bonusData,
+    equity: globalState.equityData,
   };
   
-  const currentHook = hookMap[dataType];
+  const currentData = dataMap[dataType];
   
   return {
-    // Show loading if global initial load or individual refresh
-    isLoading: globalState.isInitialLoading || currentHook.loading,
-    // Use global loading for initial load, individual loading for refreshes
+    // Use global loading state only
+    isLoading: globalState.isInitialLoading,
     showGlobalLoading: globalState.isInitialLoading,
-    showIndividualLoading: !globalState.isInitialLoading && currentHook.loading,
-    data: currentHook.data,
-    refetch: currentHook.refetch,
-    hasData: currentHook.data.length > 0,
+    showIndividualLoading: false, // No individual loading since we reuse global data
+    data: currentData,
+    refetch: () => {
+      // For individual refreshes, we would need to implement a global refetch
+      // For now, page refresh will trigger global reload
+      console.log(`Refetch requested for ${dataType} data`);
+      window.location.reload();
+    },
+    hasData: currentData.length > 0,
     globalState,
   };
 }

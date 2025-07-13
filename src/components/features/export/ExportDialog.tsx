@@ -67,16 +67,15 @@ export function ExportDialog({ isOpen, onClose, preselectedType = 'all' }: Expor
         // Decrypt all records
         const decryptedRecords: ExportRecord[] = [];
         
-        // Use batch decryption for better performance
+        // Use batch decryption for better performance with unique timer
         const allRecords = [...salaries, ...bonuses, ...equity];
         if (allRecords.length > 0) {
-          console.time('[ExportDialog] Batch decryption');
           const encryptedDataArray = allRecords.map(record => record.encryptedData);
           const decryptResults = await EncryptionService.batchDecryptData(
             encryptedDataArray,
-            password
+            password,
+            { timerPrefix: 'ExportDialog' }
           );
-          console.timeEnd('[ExportDialog] Batch decryption');
 
           allRecords.forEach((record, index) => {
             const decryptResult = decryptResults[index];

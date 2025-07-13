@@ -307,11 +307,17 @@ export class EncryptionService {
   static async batchDecryptData(
     encryptedRecords: EncryptedData[],
     password: string,
-    options?: EncryptionOptions
+    options?: EncryptionOptions & { timerPrefix?: string }
   ): Promise<DecryptionResult[]> {
     if (!encryptedRecords.length) {
       return [];
     }
+
+    // Generate unique timer identifiers to prevent conflicts
+    const batchId = Math.random().toString(36).substring(2, 8);
+    const timerPrefix = options?.timerPrefix || 'EncryptionService';
+    const keyDerivationTimer = `[${timerPrefix}] Key derivation ${batchId}`;
+    const batchDecryptionTimer = `[${timerPrefix}] Batch decryption ${batchId}`;
 
     try {
       // Validate password
@@ -352,26 +358,26 @@ export class EncryptionService {
       let sharedKey: CryptoKey | null = null;
       if (saltsMatch) {
         // Derive key once for all records (traditional case)
-        console.time('[EncryptionService] Shared key derivation');
+        console.time(keyDerivationTimer);
         sharedKey = await KeyDerivation.deriveKey({
           password,
           salt: firstSalt,
           ...options?.keyDerivationParams,
         });
-        console.timeEnd('[EncryptionService] Shared key derivation');
+        console.timeEnd(keyDerivationTimer);
       } else {
-        console.log('[EncryptionService] Different salts detected, will derive keys individually');
+        console.log(`[${timerPrefix}] Different salts detected, will derive keys individually`);
       }
 
       // Decrypt all records in parallel using the same key
-      console.time('[EncryptionService] Batch decryption');
+      console.time(batchDecryptionTimer);
       const results = await Promise.all(
         encryptedRecords.map(async (encryptedData, index) => {
           try {
             // Validate each record
             const validation = this.validateEncryptedData(encryptedData);
             if (!validation.isValid) {
-              console.error(`[EncryptionService] Record ${index} validation failed:`, {
+              console.error(`[${timerPrefix}] Record ${index} validation failed:`, {
                 recordPreview: encryptedData.encryptedData?.substring(0, 20) + '...',
                 validationErrors: validation.errors,
                 hasData: !!encryptedData.encryptedData,
@@ -411,7 +417,7 @@ export class EncryptionService {
             return { data: decryptedData, success: true };
 
           } catch (error) {
-            console.error(`[EncryptionService] Record ${index} decryption failed:`, {
+            console.error(`[${timerPrefix}] Record ${index} decryption failed:`, {
               recordPreview: encryptedData.encryptedData?.substring(0, 20) + '...',
               hasData: !!encryptedData.encryptedData,
               hasIv: !!encryptedData.iv,
@@ -431,9 +437,9 @@ export class EncryptionService {
           }
         })
       );
-      console.timeEnd('[EncryptionService] Batch decryption');
+      console.timeEnd(batchDecryptionTimer);
 
-      console.log(`[EncryptionService] Batch decrypted ${encryptedRecords.length} records`);
+      console.log(`[${timerPrefix}] Batch decrypted ${encryptedRecords.length} records`);
       return results;
 
     } catch (error) {

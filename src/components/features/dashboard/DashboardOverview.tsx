@@ -16,7 +16,7 @@ import {
   Activity,
   Download
 } from 'lucide-react';
-import { useCompensationData } from '@/hooks/useCompensationData';
+// Removed: import { useCompensationData } from '@/hooks/useCompensationData'; - now using global state
 import { useGlobalLoadingState } from '@/hooks/useGlobalLoadingState';
 import { useAnalytics } from '@/hooks/useAnalytics';
 import { HistoryLoadingScreen } from '@/components/ui/HistoryLoadingScreen';
@@ -38,16 +38,12 @@ export function DashboardOverview() {
   const { trackPageView } = useAnalytics();
   const router = useRouter();
 
-  // GLOBAL LOADING STATE: Check if we should show the history loading screen
+  // GLOBAL LOADING STATE: Use centralized state to avoid duplicate hook instances
   const globalLoadingState = useGlobalLoadingState();
-
-  // LOCAL-FIRST: Use the new compensation data hook
-  // This loads from IndexedDB immediately, provides instant UI updates,
-  // and handles background sync with Convex automatically
-  const { data: allRecords, loading: isLoading } = useCompensationData({
-    autoRefresh: true,
-    backgroundSync: true,
-  });
+  
+  // Use data from global state to prevent redundant operations
+  const allRecords = globalLoadingState.allData;
+  const isLoading = globalLoadingState.isInitialLoading;
 
   // Track page view once on mount
   useEffect(() => {
