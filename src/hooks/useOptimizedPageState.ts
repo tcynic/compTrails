@@ -21,10 +21,6 @@ interface OptimizedPageState {
   /** Error state */
   error: string | null;
   
-  /** Legacy compatibility for components that expect these states */
-  showGlobalLoading: boolean;
-  showIndividualLoading: boolean;
-  
   /** Simple refetch method */
   refetch: () => void;
 }
@@ -56,26 +52,13 @@ export function useOptimizedPageState(dataType: CompensationType): OptimizedPage
   };
   
   return {
-    // New optimized states
     isLoading,
     showLoadingScreen,
     showSkeleton,
     data: filteredData,
     hasData: filteredData.length > 0,
     error,
-    
-    // Legacy compatibility
-    showGlobalLoading: showLoadingScreen, // Map to new loading screen state
-    showIndividualLoading: false, // Always false with new optimization
-    
     refetch,
   };
 }
 
-/**
- * Legacy alias for backward compatibility
- * @deprecated Use useOptimizedPageState instead
- */
-export function usePageLoadingState(dataType: CompensationType) {
-  return useOptimizedPageState(dataType);
-}
