@@ -201,7 +201,9 @@ export class SyncService {
           // For update operations, we need the actual Convex ID from the local record
           const localRecord = await db.compensationRecords.get(parseInt(recordId as string));
           if (!localRecord?.convexId) {
-            throw new Error(`Cannot update record ${recordId}: no Convex ID found`);
+            console.warn(`[SyncService] Cannot update record ${recordId}: no Convex ID found (likely never synced or corrupted record)`);
+            // Don't throw error - just log warning and continue
+            break;
           }
           
           const updatedRecord = await this.convexClient.mutation(api.compensationRecords.updateCompensationRecord, {
@@ -428,7 +430,9 @@ export class SyncService {
           // For update operations, we need the actual Convex ID from the local record
           const localRecord = await db.compensationRecords.get(item.recordId);
           if (!localRecord?.convexId) {
-            throw new Error(`Cannot update record ${item.recordId}: no Convex ID found`);
+            console.warn(`[SyncService] Cannot update record ${item.recordId}: no Convex ID found (likely never synced or corrupted record)`);
+            // Don't throw error - just log warning and continue
+            break;
           }
           
           console.log(`[SyncService] Updating Convex record ${localRecord.convexId} for local record ${item.recordId}`);

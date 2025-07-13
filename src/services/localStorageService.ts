@@ -216,7 +216,8 @@ export class LocalStorageService {
       // Get the record first to obtain userId
       const record = await db.compensationRecords.get(id);
       if (!record) {
-        throw new Error('Record not found');
+        console.warn(`[LocalStorageService] Record ${id} not found for deletion - may have already been deleted`);
+        return; // Silently return if record doesn't exist
       }
       
       await db.compensationRecords.delete(id);
@@ -384,7 +385,13 @@ export class LocalStorageService {
     
     // Verify the item was stored correctly
     const storedItem = await db.pendingSync.get(syncItemId);
-    if (!storedItem || !storedItem.data) {
+    if (!storedItem) {
+      console.error('[LocalStorageService] Failed to store sync item properly');
+      throw new Error('Failed to store sync item');
+    }
+    
+    // For delete operations, data can be null/undefined
+    if (operation !== 'delete' && !storedItem.data) {
       console.error('[LocalStorageService] Failed to store sync item data properly');
       throw new Error('Failed to store sync item data');
     }
