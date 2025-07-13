@@ -7,7 +7,6 @@
 
 import { LocalStorageService } from './localStorageService';
 import { EncryptionService } from './encryptionService';
-import type { CompensationRecord, CompensationType } from '@/lib/db/types';
 
 export interface IntegrityCheckResult {
   isValid: boolean;
