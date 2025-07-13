@@ -27,17 +27,17 @@ const SalaryList = dynamic(() => import('@/components/features/salary/salary-lis
   loading: () => <div className="animate-pulse h-32 bg-gray-200 rounded-lg"></div>,
 });
 
-// Import the hook and required types
-import { useSalaryData } from '@/hooks/useCompensationData';
+// Import required types
 import type { DecryptedSalaryData, CompensationRecord } from '@/lib/db/types';
+import { usePageLoadingState } from '@/hooks/useGlobalLoadingState';
 
 // Create a properly typed salary record interface that matches AddSalaryForm expectations
 interface DecryptedSalaryRecord extends CompensationRecord {
   decryptedData: DecryptedSalaryData;
 }
 
-// Type alias for hook return type
-type HookSalaryRecord = ReturnType<typeof useSalaryData>['data'][0];
+// Type alias for hook return type  
+type HookSalaryRecord = ReturnType<typeof usePageLoadingState>['data'][0];
 
 export default function SalaryPage() {
   const [showAddForm, setShowAddForm] = useState(false);

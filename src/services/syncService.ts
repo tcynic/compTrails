@@ -269,6 +269,10 @@ export class SyncService {
       return;
     }
     
+    // CRITICAL FIX: Clean up completed/failed items that accumulated over time
+    // This addresses the 71+ pending sync items issue
+    await this.cleanupCompletedSyncItems(userId);
+    
     const pendingItems = await LocalStorageService.getPendingSyncItems(userId);
 
     console.log(`[SyncService] Processing ${pendingItems.length} pending sync items`);
@@ -346,6 +350,32 @@ export class SyncService {
       }
     } catch (error) {
       console.error('[SyncService] Error during cleanup:', error);
+    }
+  }
+
+  /**
+   * Clean up completed and failed sync items that have accumulated
+   * This prevents the massive sync queue backlog issue
+   */
+  private static async cleanupCompletedSyncItems(userId: string): Promise<void> {
+    try {
+      const completedItems = await db.pendingSync
+        .where('userId')
+        .equals(userId)
+        .and(item => item.status === 'completed' || item.status === 'failed')
+        .toArray();
+
+      if (completedItems.length > 0) {
+        console.log(`[SyncService] Cleaning up ${completedItems.length} completed/failed sync items`);
+        
+        for (const item of completedItems) {
+          await db.pendingSync.delete(item.id!);
+        }
+        
+        console.log(`[SyncService] Successfully cleaned up ${completedItems.length} old sync items`);
+      }
+    } catch (error) {
+      console.error('[SyncService] Error during completed sync items cleanup:', error);
     }
   }
 

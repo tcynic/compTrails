@@ -412,13 +412,14 @@ export class LocalStorageService {
   }
 
   /**
-   * Mark sync item as completed
+   * Mark sync item as completed and delete it immediately
+   * Completed sync items should not accumulate to prevent massive queues
    */
   static async markSyncCompleted(syncItemId: number): Promise<void> {
-    await db.pendingSync.update(syncItemId, {
-      status: 'completed',
-      updatedAt: Date.now(),
-    });
+    // Delete completed sync items immediately instead of updating status
+    // This prevents the accumulation of completed items that was causing 71+ item backlogs
+    await db.pendingSync.delete(syncItemId);
+    console.log(`[LocalStorageService] Deleted completed sync item ${syncItemId}`);
   }
 
   /**
@@ -437,6 +438,27 @@ export class LocalStorageService {
    */
   static async updateRecordConvexId(localId: number, convexId: string): Promise<void> {
     try {
+      // CRITICAL FIX: Check if this Convex ID is already assigned to another local record
+      // This prevents the ID collision issue where multiple local records get same Convex ID
+      const existingRecord = await db.compensationRecords
+        .where('convexId')
+        .equals(convexId)
+        .first();
+      
+      if (existingRecord && existingRecord.id !== localId) {
+        console.warn(`[LocalStorageService] Convex ID ${convexId} already assigned to local record ${existingRecord.id}, skipping assignment to record ${localId}`);
+        
+        // Don't assign the duplicate ID, but mark as synced since the data is in Convex
+        await db.compensationRecords.update(localId, {
+          syncStatus: 'synced',
+          lastSyncAt: Date.now(),
+          updatedAt: Date.now(),
+        });
+        
+        console.log(`[LocalStorageService] Marked record ${localId} as synced without assigning duplicate Convex ID`);
+        return;
+      }
+      
       await db.compensationRecords.update(localId, {
         convexId: convexId,
         syncStatus: 'synced',
