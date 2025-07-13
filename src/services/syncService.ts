@@ -111,6 +111,9 @@ export class SyncService {
     this.notifyListeners(this.syncStatus.syncing);
 
     try {
+      // Clean up any orphaned sync items before processing
+      await this.cleanupInvalidUpdateDeleteOperations();
+      
       // Process offline queue first
       await this.processOfflineQueue();
       
@@ -431,7 +434,9 @@ export class SyncService {
           const localRecord = await db.compensationRecords.get(item.recordId);
           if (!localRecord?.convexId) {
             console.warn(`[SyncService] Cannot update record ${item.recordId}: no Convex ID found (likely never synced or corrupted record)`);
-            // Don't throw error - just log warning and continue
+            // Clean up orphaned sync item
+            await db.pendingSync.delete(item.id!);
+            console.log(`[SyncService] Cleaned up orphaned sync item for record ${item.recordId}`);
             break;
           }
           
@@ -457,7 +462,9 @@ export class SyncService {
           const localRecordToDelete = await db.compensationRecords.get(item.recordId);
           if (!localRecordToDelete?.convexId) {
             console.warn(`[SyncService] Cannot delete record ${item.recordId}: no Convex ID found (likely never synced or corrupted record)`);
-            // Don't throw error - just log warning and continue
+            // Clean up orphaned sync item
+            await db.pendingSync.delete(item.id!);
+            console.log(`[SyncService] Cleaned up orphaned sync item for record ${item.recordId}`);
             break;
           }
           
@@ -768,7 +775,7 @@ export class SyncService {
           removedCount++;
         } else if (!localRecord.convexId && item.operation !== 'create') {
           // Record exists but has no Convex ID and it's an update/delete operation
-          console.log(`[SyncService] Removing ${item.operation} sync item ${item.id} - local record ${item.recordId} has no Convex ID`);
+          console.log(`[SyncService] Removing ${item.operation} sync item ${item.id} - local record ${item.recordId} has no Convex ID (orphaned record)`);
           await db.pendingSync.delete(item.id!);
           removedCount++;
         }

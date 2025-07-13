@@ -14,21 +14,6 @@ const ENVIRONMENT = process.env.NEXT_PUBLIC_ENVIRONMENT || 'development';
 export function PostHogClient({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (typeof window !== 'undefined' && process.env.NEXT_PUBLIC_POSTHOG_KEY) {
-      // Test if PostHog can load by making a simple request
-      const testPostHogAvailability = async () => {
-        try {
-          const testUrl = `${process.env.NEXT_PUBLIC_POSTHOG_HOST || 'https://us.i.posthog.com'}/health`;
-          await fetch(testUrl, { 
-            method: 'HEAD', 
-            mode: 'no-cors',
-            signal: AbortSignal.timeout(3000) // 3 second timeout
-          });
-          return true;
-        } catch {
-          console.warn('PostHog connectivity check failed, likely blocked by ad blocker or privacy extension');
-          return false;
-        }
-      };
 
       // Initialize PostHog with ad blocker compatibility settings
       posthog.init(process.env.NEXT_PUBLIC_POSTHOG_KEY, {
@@ -102,14 +87,6 @@ export function PostHogClient({ children }: { children: React.ReactNode }) {
           console.warn('PostHog request failed (likely blocked):', error);
           AnalyticsService.setAdBlockerDetected(true);
         },
-      });
-
-      // Test connectivity and handle ad blocker scenarios
-      testPostHogAvailability().then((available) => {
-        if (!available) {
-          console.log('Analytics disabled due to network restrictions (ad blocker or privacy extension)');
-          AnalyticsService.setAdBlockerDetected(true);
-        }
       });
     } else {
       // No PostHog key provided, disable analytics
