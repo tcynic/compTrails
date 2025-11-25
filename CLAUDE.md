@@ -24,7 +24,6 @@ This is a **Total Compensation Calculator** web application - a privacy-first, l
 - **Hosting**: Vercel Edge Functions
 - **Cache**: Vercel KV (Redis)
 - **Configuration**: Vercel Edge Config
-- **Analytics**: PostHog (privacy-first)
 
 ### Development Tools
 

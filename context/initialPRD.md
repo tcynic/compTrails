@@ -217,13 +217,11 @@ graph TB
     subgraph "Backend Layer"
         H[Convex Real-time DB]
         I[WorkOS - Auth/Audit]
-        J[PostHog - Analytics]
     end
     
     A --> E
     E --> H
     E --> I
-    A --> J
     C --> H
 ```
 
@@ -346,8 +344,7 @@ User Action → Local IndexedDB → Optimistic UI Update → Background Sync →
   "auth": "WorkOS (SSO + audit logs)",
   "hosting": "Vercel (Edge Functions)",
   "cache": "Vercel KV (Redis)",
-  "config": "Vercel Edge Config",
-  "analytics": "PostHog (privacy-first)"
+  "config": "Vercel Edge Config"
 }
 ```
 
@@ -378,13 +375,6 @@ User Action → Local IndexedDB → Optimistic UI Update → Background Sync →
 - Audit log API
 - Directory sync
 - Admin portal
-
-#### PostHog
-
-- Privacy-first analytics
-- Feature flags
-- Session recordings (opt-in)
-- Custom events
 
 #### Vercel
 

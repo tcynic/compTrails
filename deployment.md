@@ -48,8 +48,6 @@ All environment variables from `.env.staging` and `.env.production` must be set 
 - `NEXT_PUBLIC_CONVEX_URL`
 
 #### Analytics & Monitoring
-- `NEXT_PUBLIC_POSTHOG_KEY`
-- `NEXT_PUBLIC_POSTHOG_HOST`
 - `SENTRY_DSN`
 - `SENTRY_ORG`
 - `SENTRY_PROJECT`
@@ -148,7 +146,6 @@ See `vercel.json` for:
 
 ### Application Monitoring
 - **Sentry**: Error tracking and performance monitoring
-- **PostHog**: User analytics and feature usage
 - **Vercel Analytics**: Core web vitals and performance
 
 ## Troubleshooting

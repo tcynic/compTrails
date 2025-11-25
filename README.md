@@ -48,7 +48,6 @@ A **privacy-first, local-first** web application for tracking complete compensat
 - **[Convex](https://convex.dev/)** - Real-time database with ACID compliance
 - **[WorkOS](https://workos.com/)** - Enterprise SSO and audit logging
 - **[Vercel](https://vercel.com/)** - Edge deployment and serverless functions
-- **[PostHog](https://posthog.com/)** - Privacy-first analytics
 
 ### Security & Storage
 - **Web Crypto API** - Client-side encryption
@@ -108,13 +107,11 @@ graph TB
     subgraph "Backend Layer"
         H[Convex Real-time DB]
         I[WorkOS - Auth/Audit]
-        J[PostHog - Analytics]
     end
     
     A --> E
     E --> H
     E --> I
-    A --> J
     C --> H
 ```
 
