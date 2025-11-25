@@ -2,95 +2,67 @@
 
 ## Overview
 
-This project uses Vercel for hosting with separate staging and production environments.
-
-## Environment Setup
-
-### Staging Environment
-- **URL**: `https://comp-trails-staging.vercel.app`
-- **Branch**: `staging` (auto-deploys)
-- **Environment**: `staging`
-
-### Production Environment
-- **URL**: `https://comp-trails.vercel.app`
-- **Branch**: `main` (auto-deploys)
-- **Environment**: `production`
+This project uses a single Vercel project (`comptrails`) with Git integration for automatic deployments:
+- `main` branch → Production environment
+- `staging` branch → Preview environment
+- Feature branches → Ephemeral preview deployments
 
 ## Initial Setup
 
-### 1. Login to Vercel
-```bash
-vercel login
-```
+### 1. Create Vercel Project
 
-### 2. Link Project
-```bash
-vercel link
-```
+1. Go to [vercel.com/dashboard](https://vercel.com/dashboard)
+2. Click "Add New" → "Project"
+3. Import your GitHub repository
+4. Name the project: `comptrails`
+5. Configure build settings (Vercel auto-detects Next.js)
+6. Deploy
 
-### 3. Create Projects
-You'll need to create two separate Vercel projects:
-- `comp-trails-staging` (for staging)
-- `comp-trails` (for production)
+### 2. Configure Git Integration
+
+Vercel automatically configures:
+- Production branch: `main`
+- Automatic deployments on push
+- Preview deployments for pull requests
+
+### 3. Set Production Branch
+
+In Vercel project settings:
+1. Go to **Settings** → **Git**
+2. Set **Production Branch** to `main`
+3. Enable **Automatic deployments for Production Branch**
 
 ## Environment Variables
 
 ### Required Variables
-All environment variables from `.env.staging` and `.env.production` must be set in Vercel dashboard:
 
-#### Authentication (WorkOS)
-- `WORKOS_API_KEY`
-- `WORKOS_CLIENT_ID`
-- `WORKOS_WEBHOOK_SECRET`
+Set these in Vercel dashboard under **Settings** → **Environment Variables**:
+
+#### Authentication (Clerk)
+- `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` - Clerk publishable key
+- `CLERK_SECRET_KEY` - Clerk secret key (use different keys for production vs preview)
 
 #### Database (Convex)
-- `CONVEX_DEPLOYMENT`
-- `NEXT_PUBLIC_CONVEX_URL`
-
-#### Analytics & Monitoring
-- `SENTRY_DSN`
-- `SENTRY_ORG`
-- `SENTRY_PROJECT`
-- `SENTRY_AUTH_TOKEN`
+- `NEXT_PUBLIC_CONVEX_URL` - Convex deployment URL
 
 #### Application Configuration
-- `NEXT_PUBLIC_ENVIRONMENT`
-- `NEXT_PUBLIC_APP_URL`
+- `NEXT_PUBLIC_APP_URL` - Your application URL (e.g., `https://comptrails.vercel.app`)
 
 ### Setting Environment Variables
 
-#### Via Vercel Dashboard
-1. Go to your project settings
-2. Navigate to "Environment Variables"
-3. Add each variable with appropriate values for staging/production
+1. Go to your Vercel project → **Settings** → **Environment Variables**
+2. Add each variable
+3. Select which environments to apply:
+   - **Production**: Applied to `main` branch deployments
+   - **Preview**: Applied to `staging` and feature branch deployments
+   - **Development**: For local development (optional)
 
-#### Via CLI
-```bash
-# Set staging environment variables
-vercel env add WORKOS_API_KEY staging
-
-# Set production environment variables
-vercel env add WORKOS_API_KEY production
-```
-
-## Branch-Based Deployments
-
-### Automatic Deployments
-- **Staging**: Pushes to `staging` branch auto-deploy to staging environment
-- **Production**: Pushes to `main` branch auto-deploy to production environment
-
-### Manual Deployments
-```bash
-# Deploy to staging
-npm run deploy:staging
-
-# Deploy to production
-npm run deploy:prod
-```
+**Tip**: Use separate Clerk applications for production and preview environments for better isolation.
 
 ## Deployment Workflow
 
-### 1. Feature Development
+### Feature Development
+
 ```bash
 # Create feature branch
 git checkout -b feature/new-feature
@@ -98,94 +70,108 @@ git checkout -b feature/new-feature
 # Develop and test locally
 npm run dev
 
-# Push to feature branch
+# Commit and push
+git add .
+git commit -m "Add new feature"
 git push origin feature/new-feature
 ```
 
-### 2. Staging Deployment
+Vercel automatically creates a preview deployment for your feature branch.
+
+### Deploy to Staging
+
 ```bash
-# Merge to staging for testing
+# Merge to staging branch
 git checkout staging
 git merge feature/new-feature
 git push origin staging
-
-# Vercel auto-deploys to staging environment
 ```
 
-### 3. Production Deployment
+Vercel deploys to preview environment automatically.
+
+### Deploy to Production
+
 ```bash
-# After testing, merge to main
+# After testing in staging, merge to main
 git checkout main
 git merge staging
 git push origin main
-
-# Vercel auto-deploys to production environment
 ```
+
+Vercel deploys to production automatically.
 
 ## Build Configuration
 
-### Next.js Configuration
-The project uses Next.js 15 with:
-- **Turbopack** for development
-- **App Router** architecture
-- **Server Components** where applicable
-- **Static generation** for optimal performance
+### Next.js
 
-### Vercel Configuration
-See `vercel.json` for:
-- Build commands
-- Environment variable mapping
-- Function timeout settings
-- Region configuration
+The project uses:
+- **Next.js 15** with App Router
+- **Turbopack** for development builds
+- **React 19** with Server Components
+- **Tailwind CSS 4** for styling
+
+### Vercel Settings
+
+`vercel.json` specifies:
+- **Region**: `iad1` (US East)
+- **Function timeout**: 30s for API routes
+
+Vercel auto-detects Next.js and uses optimal build settings.
 
 ## Monitoring
 
-### Build Logs
-- Check Vercel dashboard for build logs
-- Monitor deployment status in real-time
+### Deployment Status
 
-### Application Monitoring
-- **Sentry**: Error tracking and performance monitoring
-- **Vercel Analytics**: Core web vitals and performance
+- View deployments in Vercel dashboard
+- Check build logs for errors
+- Preview URLs available immediately after deployment
+
+### Production Monitoring
+
+- **Vercel Analytics**: Built-in performance monitoring
+- **Vercel Logs**: Real-time function logs
+- **Build Logs**: Detailed build output
 
 ## Troubleshooting
 
-### Common Issues
+### Build Failures
 
-#### Build Failures
 1. Check environment variables are set correctly
-2. Verify all dependencies are listed in `package.json`
+2. Verify all dependencies in `package.json`
 3. Review build logs in Vercel dashboard
+4. Ensure TypeScript compilation succeeds locally
 
-#### Environment Variable Issues
-1. Ensure all required variables are set for each environment
-2. Check variable names match exactly
-3. Verify sensitive values are not exposed to client-side
+### Environment Variable Issues
 
-#### Database Connection Issues
-1. Verify Convex deployment URLs
-2. Check authentication tokens
-3. Ensure database schemas are synced
+- Verify variables are set for correct environment (Production vs Preview)
+- Check for typos in variable names
+- Ensure `NEXT_PUBLIC_*` variables are set at build time
+- Redeploy after changing environment variables
 
-### Support
-- Review Vercel documentation
-- Check project logs in Vercel dashboard
-- Monitor error tracking in Sentry
+### Authentication Issues
 
-## Security Considerations
+- Verify Clerk keys match the environment
+- Check allowed domains in Clerk dashboard
+- Ensure production uses production Clerk keys
+
+## Security Best Practices
 
 ### Environment Variables
-- Never commit actual environment variable values
-- Use Vercel's encrypted storage for sensitive data
+
+- Never commit `.env.local` or actual secrets to Git
+- Use separate Clerk apps for production vs preview
 - Rotate keys regularly
+- Use Vercel's encrypted environment variable storage
 
 ### Branch Protection
+
 - Protect `main` branch with required reviews
-- Use staging environment for testing
-- Implement automated checks before deployment
+- Require status checks to pass before merging
+- Use `staging` branch for testing before production
 
 ---
 
 **Document Version History**
 
 - v1.0 - Initial deployment guide creation (2025-01-04)
+- v2.0 - Simplified to single Vercel project with Clerk auth (2025-11-25)

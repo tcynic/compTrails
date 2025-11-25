@@ -7,9 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "format": "prettier --write .",
-    "deploy:staging": "vercel --prod --scope=staging",
-    "deploy:prod": "vercel --prod"
+    "format": "prettier --write ."
   },
   "dependencies": {
     "@clerk/nextjs": "^6.35.5",
