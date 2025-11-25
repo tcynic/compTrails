@@ -20,7 +20,7 @@ This is a **Total Compensation Calculator** web application - a privacy-first, l
 ### Backend Architecture
 
 - **Database**: Convex (real-time, ACID compliant)
-- **Authentication**: WorkOS (SSO + audit logs)
+- **Authentication**: Clerk (user management + SSO)
 - **Hosting**: Vercel Edge Functions
 - **Cache**: Vercel KV (Redis)
 - **Configuration**: Vercel Edge Config
@@ -48,7 +48,7 @@ This is a **Total Compensation Calculator** web application - a privacy-first, l
 - All sensitive data encrypted client-side with AES-256-GCM
 - Encryption keys derived from user credentials using Argon2id
 - Backend never has access to plaintext financial data
-- WorkOS handles authentication and audit logging
+- Clerk handles authentication and user management
 
 ### Performance Targets
 
@@ -82,10 +82,10 @@ npx convex deploy       # Deploy Convex functions
 ## Implemented Architecture
 
 ### Authentication System
-- **WorkOS Integration**: Complete OAuth setup with Google SSO
-- **API Routes**: `/api/auth/login`, `/api/auth/callback`, `/api/auth/logout`, `/api/auth/me`
-- **Session Management**: Cookie-based sessions with secure httpOnly cookies
-- **Auth Context**: React context for authentication state management (`src/contexts/AuthContext.tsx`)
+- **Clerk Integration**: Complete authentication with Google SSO and other providers
+- **Middleware**: Route protection via `middleware.ts` using Clerk's middleware
+- **Session Management**: Clerk handles sessions automatically with secure cookies
+- **Auth Context**: Thin wrapper around Clerk hooks maintaining backward compatibility (`src/contexts/AuthContext.tsx`)
 
 ### Encryption Layer (Zero-Knowledge Architecture)
 - **Key Derivation**: Argon2id with PBKDF2 fallback for compatibility (`src/lib/crypto/keyDerivation.ts`)
@@ -107,8 +107,9 @@ npx convex deploy       # Deploy Convex functions
 ### Provider Architecture
 ```
 RootLayout
+├── ClerkProvider (Authentication)
 ├── ConvexClientProvider (Database connectivity)
-├── AuthProvider (Authentication state)
+├── AuthProvider (Auth wrapper for backward compatibility)
 └── OfflineProvider (Offline/sync state)
 ```
 
@@ -181,8 +182,9 @@ IndexedDB → EncryptedData → EncryptionService.decryptData() → User Data
 - `src/services/encryptionService.ts` - High-level encryption service
 
 ### Authentication
-- `src/lib/workos.ts` - WorkOS client configuration
-- `src/app/api/auth/` - OAuth API routes
+- `middleware.ts` - Clerk middleware for route protection
+- `src/contexts/AuthContext.tsx` - Clerk wrapper for backward compatibility
+- `src/app/login/page.tsx` - Login page with Clerk SignIn component
 
 ### Offline Support
 - `public/sw.js` - Service worker with caching strategies
@@ -210,9 +212,8 @@ All markdown files must include a version history section at the bottom when edi
 
 Required environment variables for development:
 ```bash
-WORKOS_API_KEY=your_workos_api_key
-WORKOS_CLIENT_ID=your_workos_client_id
-WORKOS_WEBHOOK_SECRET=your_workos_webhook_secret
+NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=your_clerk_publishable_key
+CLERK_SECRET_KEY=your_clerk_secret_key
 ```
 
 ## Task Management
@@ -247,3 +248,4 @@ WORKOS_WEBHOOK_SECRET=your_workos_webhook_secret
 - v1.2 - Added best practice about using descriptive variable names (2024-02-22)
 - v1.3 - Added Task Management section with guidance for task tracking (2024-02-22)
 - v2.0 - Complete rewrite to reflect Phase 1 completion and current architecture (2025-01-03)
+- v2.1 - Updated authentication from WorkOS to Clerk (2025-11-25)

@@ -34,8 +34,10 @@ export function OfflineProvider({ children }: OfflineProviderProps) {
     window.addEventListener('online', handleOnline);
     window.addEventListener('offline', handleOffline);
 
-    // Register service worker
-    ServiceWorkerManager.register();
+    // Register service worker (optional - gracefully handles if sw.js doesn't exist)
+    ServiceWorkerManager.register().catch(err => {
+      console.log('Service worker not available:', err.message);
+    });
 
     // Initialize sync service
     SyncService.initialize();

@@ -1,6 +1,8 @@
 'use client';
 
-import { createContext, useContext, useState, useEffect, useCallback, useMemo, ReactNode } from 'react';
+import { createContext, useContext, useMemo, ReactNode } from 'react';
+import { useUser, useClerk } from '@clerk/nextjs';
+import { useRouter } from 'next/navigation';
 
 interface User {
   id: string;
@@ -28,84 +30,43 @@ interface AuthProviderProps {
 }
 
 export function AuthProvider({ children }: AuthProviderProps) {
-  const [authState, setAuthState] = useState<AuthState>({
-    user: null,
-    loading: true,
-    error: null,
-  });
+  const { user: clerkUser, isLoaded } = useUser();
+  const { signOut, redirectToSignIn } = useClerk();
+  const router = useRouter();
 
-  const checkAuthStatus = useCallback(async () => {
-    try {
-      const response = await fetch('/api/auth/me');
-      if (response.ok) {
-        const user = await response.json();
-        setAuthState(() => ({
-          user,
-          loading: false,
-          error: null,
-        }));
-      } else {
-        setAuthState(() => ({
-          user: null,
-          loading: false,
-          error: null,
-        }));
-      }
-    } catch {
-      setAuthState(() => ({
-        user: null,
-        loading: false,
-        error: 'Failed to check authentication status',
-      }));
-    }
-  }, []);
+  // Transform Clerk user to our User interface
+  const user: User | null = useMemo(() => {
+    if (!clerkUser) return null;
+    
+    return {
+      id: clerkUser.id,
+      email: clerkUser.primaryEmailAddress?.emailAddress || '',
+      firstName: clerkUser.firstName || '',
+      lastName: clerkUser.lastName || '',
+    };
+  }, [clerkUser]);
 
-  // Check for existing session on mount
-  useEffect(() => {
-    checkAuthStatus();
-  }, [checkAuthStatus]);
+  const login = () => {
+    redirectToSignIn();
+  };
 
-  const login = useCallback((provider: string = 'google') => {
-    setAuthState(prev => ({ ...prev, loading: true, error: null }));
-    window.location.href = `/api/auth/login?provider=${provider}`;
-  }, []);
+  const logout = async () => {
+    await signOut();
+    router.push('/login');
+  };
 
-  const logout = useCallback(async () => {
-    try {
-      setAuthState(prev => ({ ...prev, loading: true }));
-      const response = await fetch('/api/auth/logout', {
-        method: 'POST',
-      });
-      
-      if (response.ok) {
-        setAuthState(() => ({
-          user: null,
-          loading: false,
-          error: null,
-        }));
-        window.location.href = '/login';
-      } else {
-        throw new Error('Logout failed');
-      }
-    } catch {
-      setAuthState(prev => ({
-        ...prev,
-        loading: false,
-        error: 'Failed to logout',
-      }));
-    }
-  }, []);
-
-  const clearError = useCallback(() => {
-    setAuthState(prev => ({ ...prev, error: null }));
-  }, []);
+  const clearError = () => {
+    // No-op for now, Clerk handles errors internally
+  };
 
   const value: AuthContextType = useMemo(() => ({
-    ...authState,
+    user,
+    loading: !isLoaded,
+    error: null,
     login,
     logout,
     clearError,
-  }), [authState, login, logout, clearError]);
+  }), [user, isLoaded, login, logout, clearError]);
 
   return (
     <AuthContext.Provider value={value}>

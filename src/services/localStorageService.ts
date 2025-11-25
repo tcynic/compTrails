@@ -1,4 +1,4 @@
-import { db } from '@/lib/db/database';
+import { getDb } from '@/lib/db/database';
 import type {
   CompensationRecord,
   PendingSyncItem,
@@ -19,6 +19,7 @@ export class LocalStorageService {
    */
   static async addCompensationRecord(record: Omit<CompensationRecord, 'id'>): Promise<number> {
     try {
+      const db = getDb();
       const id = await db.compensationRecords.add(record as CompensationRecord);
       
       // Add to sync queue if not already synced
@@ -43,6 +44,7 @@ export class LocalStorageService {
     type?: CompensationType
   ): Promise<CompensationRecord[]> {
     try {
+      const db = getDb();
       let query = db.compensationRecords.where('userId').equals(userId);
       
       if (type) {
@@ -66,6 +68,7 @@ export class LocalStorageService {
     updates: Partial<CompensationRecord>
   ): Promise<void> {
     try {
+      const db = getDb();
       await db.compensationRecords.update(id, {
         ...updates,
         updatedAt: Date.now(),
@@ -88,6 +91,7 @@ export class LocalStorageService {
    */
   static async deleteCompensationRecord(id: number): Promise<void> {
     try {
+      const db = getDb();
       await db.compensationRecords.delete(id);
       
       // Add to sync queue
@@ -121,6 +125,7 @@ export class LocalStorageService {
       status: 'pending',
     };
 
+    const db = getDb();
     await db.pendingSync.add(syncItem as PendingSyncItem);
   }
 
@@ -129,6 +134,7 @@ export class LocalStorageService {
    */
   static async getPendingSyncItems(userId: string): Promise<PendingSyncItem[]> {
     try {
+      const db = getDb();
       return await db.pendingSync.where('userId').equals(userId).toArray();
     } catch (error) {
       throw new LocalStorageError(
@@ -142,6 +148,7 @@ export class LocalStorageService {
    * Mark sync item as completed
    */
   static async markSyncCompleted(syncItemId: number): Promise<void> {
+    const db = getDb();
     await db.pendingSync.update(syncItemId, {
       status: 'completed',
       updatedAt: Date.now(),
@@ -152,6 +159,7 @@ export class LocalStorageService {
    * Mark sync item as failed
    */
   static async markSyncFailed(syncItemId: number, error: string): Promise<void> {
+    const db = getDb();
     await db.pendingSync.update(syncItemId, {
       status: 'failed',
       error,

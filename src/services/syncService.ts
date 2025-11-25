@@ -1,4 +1,4 @@
-import { db } from '@/lib/db/database';
+import { getDb } from '@/lib/db/database';
 import { LocalStorageService } from './localStorageService';
 import type { PendingSyncItem, OfflineQueueItem } from '@/lib/db/types';
 
@@ -95,6 +95,7 @@ export class SyncService {
    * Process offline queue items
    */
   private static async processOfflineQueue(): Promise<void> {
+    const db = getDb();
     const queueItems = await db.offlineQueue
       .where('status')
       .equals('pending')
@@ -164,6 +165,7 @@ export class SyncService {
         if (newAttempts >= 3) {
           await LocalStorageService.markSyncFailed(item.id!, errorMessage);
         } else {
+          const db = getDb();
           await db.pendingSync.update(item.id!, {
             attempts: newAttempts,
             lastAttemptAt: Date.now(),
@@ -229,6 +231,7 @@ export class SyncService {
 
     // Update local record sync status
     if (item.tableName === 'compensationRecords') {
+      const db = getDb();
       await db.compensationRecords.update(item.recordId, {
         syncStatus: 'synced',
         lastSyncAt: Date.now(),
@@ -256,6 +259,7 @@ export class SyncService {
       status: 'pending',
     };
 
+    const db = getDb();
     await db.offlineQueue.add(queueItem as OfflineQueueItem);
   }
 
@@ -264,8 +268,14 @@ export class SyncService {
    */
   private static getAuthToken(): string {
     // This would get the actual auth token from the auth context
-    if (typeof window !== 'undefined') {
-      return localStorage.getItem('authToken') || '';
+    if (typeof window !== 'undefined' && 
+        window.localStorage && 
+        typeof window.localStorage.getItem === 'function') {
+      try {
+        return window.localStorage.getItem('authToken') || '';
+      } catch {
+        return '';
+      }
     }
     return '';
   }
@@ -274,6 +284,7 @@ export class SyncService {
    * Get sync statistics
    */
   static async getSyncStats() {
+    const db = getDb();
     const [pendingSync, offlineQueue] = await Promise.all([
       db.pendingSync.where('status').equals('pending').count(),
       db.offlineQueue.where('status').equals('pending').count(),

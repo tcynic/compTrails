@@ -121,7 +121,7 @@ export default function Home() {
                 <li>• Client-side AES-256-GCM encryption</li>
                 <li>• Argon2id key derivation</li>
                 <li>• Local-first data storage</li>
-                <li>• WorkOS enterprise authentication</li>
+                <li>• Secure authentication with Clerk</li>
               </ul>
             </div>
           </div>

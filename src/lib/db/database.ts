@@ -79,9 +79,15 @@ export class CompTrailsDatabase extends Dexie {
   async getCurrentUserId(): Promise<string | null> {
     // This would typically get the user ID from the auth context
     // For now, we'll use a placeholder implementation
-    if (typeof window !== 'undefined') {
-      const user = localStorage.getItem('currentUser');
-      return user ? JSON.parse(user).id : null;
+    if (typeof window !== 'undefined' && 
+        window.localStorage && 
+        typeof window.localStorage.getItem === 'function') {
+      try {
+        const user = window.localStorage.getItem('currentUser');
+        return user ? JSON.parse(user).id : null;
+      } catch {
+        return null;
+      }
     }
     return null;
   }
@@ -172,11 +178,47 @@ export class CompTrailsDatabase extends Dexie {
   }
 }
 
-// Create and export a singleton instance
-export const db = new CompTrailsDatabase();
+// Create and export a singleton instance (client-side only)
+let _db: CompTrailsDatabase | null = null;
 
-// Enable debug mode in development
-if (typeof window !== 'undefined' && process.env.NODE_ENV === 'development') {
-  (window as any).db = db;
-  console.log('CompTrails database instance available as window.db');
-}
+export const getDb = (): CompTrailsDatabase => {
+  // Guard against server-side access
+  if (typeof window === 'undefined') {
+    throw new Error('Database can only be accessed on the client side');
+  }
+  
+  // Guard against missing IndexedDB
+  if (typeof indexedDB === 'undefined') {
+    throw new Error('IndexedDB is not available');
+  }
+  
+  if (!_db) {
+    _db = new CompTrailsDatabase();
+    
+    // Enable debug mode in development
+    if (process.env.NODE_ENV === 'development') {
+      (window as any).db = _db;
+      console.log('CompTrails database instance available as window.db');
+    }
+  }
+  
+  return _db;
+};
+
+// Export db as a Proxy for backward compatibility (client-side only)
+// On server, export a dummy object that throws on access
+const createDbProxy = () => {
+  if (typeof window === 'undefined') {
+    // Server-side: return empty object, any access will throw from getDb()
+    return {} as CompTrailsDatabase;
+  }
+  
+  // Client-side: return a Proxy that lazily initializes
+  return new Proxy({} as CompTrailsDatabase, {
+    get(target, prop) {
+      return getDb()[prop as keyof CompTrailsDatabase];
+    }
+  });
+};
+
+export const db = createDbProxy();

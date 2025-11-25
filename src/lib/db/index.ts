@@ -1,5 +1,5 @@
 // Database exports
-export { db, CompTrailsDatabase } from './database';
+export { getDb, db, CompTrailsDatabase } from './database';
 export { LocalStorageService, LocalStorageError } from '@/services/localStorageService';
 export { SyncService } from '@/services/syncService';
 

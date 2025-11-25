@@ -41,8 +41,10 @@ export class ServiceWorkerManager {
       this.notifyListeners(this.status.installed);
       return registration;
     } catch (error) {
-      console.error('Service worker registration failed:', error);
-      this.notifyListeners(this.status.error);
+      // Service worker file not found or registration failed
+      // This is non-critical - app works fine without it
+      console.log('Service worker not available (this is okay - offline features disabled)');
+      this.notifyListeners(this.status.unsupported);
       return null;
     }
   }
